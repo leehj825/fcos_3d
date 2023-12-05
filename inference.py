@@ -10,8 +10,8 @@ from tqdm.auto import tqdm
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 import dataset.kitti as kitti
-import model.fcos3d_2 as fcos3d
-import model.loss.loss as loss
+import model.fcos3d as fcos3d
+
 from torchvision.models.detection import fcos
 from torchvision.datasets import VOCDetection
 import torchvision.transforms.functional as TF
@@ -39,20 +39,24 @@ default_data_path="data/kitti_200/"
 
 default_learning_rate = 0.001
 
-default_image_path ='/Users/hyejunlee/NN_Scratch/data/kitti/training/image_2/000005.png'
-default_load_checkpoint = '/Users/hyejunlee/NN_Scratch/save_state_2d_14_hpc.bin'
+default_image_path ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000005.png'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_2d_19.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_save_state_2d_7_hpc_05.png' 
+default_output_image_path = 'output_save_state_19_05.png' 
 
 
-default_label_folder ='/Users/hyejunlee/NN_Scratch/data/kitti/training/label_2/'
-default_calib_folder ='/Users/hyejunlee/NN_Scratch/data/kitti/training/calib/'
-default_output_image_path = '/Users/hyejunlee/NN_Scratch/output14'
-num_images = 20
+default_label_folder ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
+default_calib_folder ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
+default_output_image_path = '/Users/hyejunlee/fcos_3d/output19'
+num_images = 10
+
+# Check if the directory exists
+if not os.path.exists(default_output_image_path):
+    os.makedirs(default_output_image_path)  # Create the directory if it does not exist
 
 # Detect device
-device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 device = "cpu"
 print(device)
 
@@ -235,7 +239,7 @@ def save_combined_image(boxes, scores, labels, dimensions, locations, orientatio
     combined_image.save(output_image_path)
 
 
-def main(mode='train', image_path=None, load=None):
+def main(mode='inference', image_path=None, load=None):
     # Main function to handle training and inference
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -261,8 +265,8 @@ def main(mode='train', image_path=None, load=None):
     # Define a data loader
     data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
-    num_epochs = 500
-    start_epoch = 0
+    #num_epochs = 500
+    #start_epoch = 0
 
     # Load model checkpoint if provided
     #if load:
@@ -323,74 +327,7 @@ def main(mode='train', image_path=None, load=None):
                     # If this fails, the file might be corrupted or not a valid checkpoint
             
 
-    if mode == 'train':
-        # Training loop
-        for epoch in range(start_epoch, num_epochs):
-            for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):
-
-                # Extract the original image size (height, width) from the images tensor
-                _, _, orig_height, orig_width = images.size()
-
-                # Prepare targets for each image
-                target_list = []
-                for image_targets in targets:
-                    boxes = []  # 2D bounding boxes
-                    labels = []    # Object labels
-                    dimensions_3d = []  # 3D bounding box dimensions (height, width, length)
-                    locations_3d = []  # 3D bounding box center location (x, y, z)
-                    orientations_y = []  # Rotation around the Y-axis
-
-                    for target in image_targets:
-                        if target["type"] in CLASS_MAPPING:
-                            # Parsing the 2D bounding box and object label
-                            boxes.append(target["bbox"])
-                            labels.append(CLASS_MAPPING[target["type"]])
-
-                            # Parsing 3D bounding box information
-                            dimensions_3d.append(target["dimensions"])  # [height, width, length]
-                            locations_3d.append(target["location"])     # [x, y, z]
-                            orientations_y.append(target["rotation_y"]) # rotation y
-
-                    target_dict = {
-                        'boxes': torch.tensor(boxes, dtype=torch.float32).to(device).reshape(-1, 4),
-                        'labels': torch.tensor(labels, dtype=torch.int64).to(device),
-                        'dimensions_3d': torch.tensor(dimensions_3d, dtype=torch.float32).to(device),
-                        'locations_3d': torch.tensor(locations_3d, dtype=torch.float32).to(device),
-                        'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device)
-                    }
-                    target_list.append(target_dict)
-                #print("target_list: ", target_list)
-
-                # Forward pass
-                loss_dict = model(images, target_list)
-
-                # Print each loss component for the current batch
-                loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
-
-                for loss_name, loss_value in loss_dict.items():
-                    loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
-
-                print(loss_info.strip(", "))
-
-                losses = sum(loss for loss in loss_dict.values())
-                loss_value = losses.item()
-
-                # Backward pass
-                optimizer.zero_grad()
-                losses.backward()
-                optimizer.step()
-
-            print(f"Epoch {epoch+1} of {num_epochs}, Loss: {loss_value}")
-
-            # Save checkpoint
-            if (epoch+1) % 1 == 0:
-                torch.save({
-                    'epoch': epoch+1,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict()
-                }, f"./save_state_2d_{epoch+1}.bin")
-
-    elif mode == 'inference':
+    if mode == 'inference':
         device = "cpu"
         model = model.to(device)
         
@@ -416,7 +353,7 @@ def main(mode='train', image_path=None, load=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'inference'], help='Mode to run the script in')
+    parser.add_argument('--mode', type=str, default='inference', choices=['train', 'inference'], help='Mode to run the script in')
     parser.add_argument('--image_path', default=default_image_path, type=str, help='Path to the image for inference mode')
     parser.add_argument('--load', default=default_load_checkpoint, type=str, help='Path to the pretrained model file')
     args = parser.parse_args()
