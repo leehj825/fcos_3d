@@ -740,7 +740,7 @@ class FCOS(nn.Module):
 
         # After transformation
         #print("After Transform:")
-        # The 'images' after transform is a transformed batch, not a list, hence direct .shape can be used
+        ## The 'images' after transform is a transformed batch, not a list, hence direct .shape can be used
         #print("Images tensor shape: ", images.tensors.shape)
         #print("Targets shapes: ", [target['boxes'].shape for target in targets])
 

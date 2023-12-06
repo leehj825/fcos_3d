@@ -37,24 +37,24 @@ CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
 default_kitti_data_path = "data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/NN_Scratch/data/kitti/training/image_2/000025.png'
-default_kitti_label_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/label_2/'
-default_kitti_calib_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/calib/'
+default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
+default_kitti_label_folder = 'data/kitti_200/training/label_2/'
+default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
 default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/calib/'
+default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = 'data/waymo_single/training/label_0/'
+default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
-default_image_path ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_2d_85.bin'
+default_image_path ='data/kitti_200/training/image_2/000005.png'
+default_load_checkpoint = 'save_state_34.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = '/Users/hyejunlee/fcos_3d/output85'
+default_output_image_path = 'output_34'
 num_images = 10
 
 # Check if the directory exists
@@ -246,6 +246,7 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
         for line in f.readlines():
             parts = line.strip().split()
             bbox = [float(parts[i]) for i in range(4, 8)]  # 2D bounding box
+
             dimension_3d = [float(parts[i]) for i in range(8, 11)]  # 3D dimensions
             location_3d = [float(parts[i]) for i in range(11, 14)]  # 3D location
             rotation_y = float(parts[14])  # Orientation
@@ -254,21 +255,22 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
             corners_2d = project_to_image(corners_3d.T, P)
 
             #draw.rectangle(bbox, outline="yellow")
-            draw_3d_box(draw_gt, corners_2d)
+            if bbox[2] > bbox[0] and bbox[3] > bbox[1]:  # Ensures width and height are positive
+                draw_3d_box(draw_gt, corners_2d)
 
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, location, orientation in zip(boxes, scores, labels, dimensions, locations, orientation):
         if score > 0.5:  # Threshold can be adjusted
-            #draw.rectangle(box.tolist(), outline="green")
+            draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box
             corners_3d = create_3d_bbox(dimension, location, orientation)
             corners_2d = project_to_image(corners_3d.T, P)
             draw_3d_box(draw_pred, corners_2d, color="green")
-
+    
     # Save the combined image
     #image.save(output_image_path)
 
@@ -281,7 +283,7 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
     combined_image.save(output_image_path)
 
 
-def main(mode='inference', dataset_name='kitti', image_path=None, load=None):
+def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
     # Main function to handle training and inference
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -403,7 +405,7 @@ def main(mode='inference', dataset_name='kitti', image_path=None, load=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')
     parser.add_argument('--mode', type=str, default='inference', choices=['train', 'inference'], help='Mode to run the script in')
-    parser.add_argument('--dataset', type=str, default='kitti', choices=['kitti', 'waymo'], help='Dataset to use')
+    parser.add_argument('--dataset', type=str, default='waymo', choices=['kitti', 'waymo'], help='Dataset to use')
     parser.add_argument('--image_path', default=default_kitti_image_path, type=str, help='Path to the image for inference mode')
     parser.add_argument('--load', default=default_load_checkpoint, type=str, help='Path to the pretrained model file')
     args = parser.parse_args()

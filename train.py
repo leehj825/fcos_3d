@@ -25,25 +25,25 @@ CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
 default_kitti_data_path = "data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/NN_Scratch/data/kitti/training/image_2/000025.png'
-default_kitti_label_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/label_2/'
-default_kitti_calib_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/calib/'
+default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
+default_kitti_label_folder = 'data/kitti_200/training/label_2/'
+default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
 default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/calib/'
+default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = 'data/waymo_single/training/label_0/'
+default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
-default_load_checkpoint = '/Users/hyejunlee/NN_Scratch/save_state_3.bin'
-#default_load_checkpoint = None
+#default_load_checkpoint = 'save_state_32.bin'
+default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-device = "cpu"
+#device = "cpu"
 print(device)
 
 def custom_collate(batch, dataset_name):
@@ -270,7 +270,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
     print(device)
 
     # Load the pre-trained FCOS model
-    model = fcos3d.fcos3d(weights_backbone=ResNet101_Weights.IMAGENET1K_V1, num_classes=3)
+    model = fcos3d.fcos3d(weights_backbone=ResNet101_Weights.IMAGENET1K_V1, num_classes=3, _skip_resize=True)
     model = model.to(device)
 
     # Construct an optimizer
