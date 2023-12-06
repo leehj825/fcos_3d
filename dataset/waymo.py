@@ -14,8 +14,8 @@ import numpy as np
 
 # Reference:
 # https://github.com/pytorch/vision/blob/main/torchvision/datasets/kitti.py
-class Kitti(VisionDataset):
-    """`KITTI <http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark>`_ Dataset.
+class Waymo(VisionDataset):
+    """`Waymo <http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark>`_ Dataset.
 
     It corresponds to the "left color images of object" dataset, for object detection.
 
@@ -29,10 +29,10 @@ class Kitti(VisionDataset):
                     └── Kitti
                         └─ raw
                             ├── training
-                            |   ├── image_2
-                            |   └── label_2
+                            |   ├── image_0
+                            |   └── label_0
                             └── testing
-                                └── image_2
+                                └── image_0
         train (bool, optional): Use ``train`` split if true, else ``test`` split.
             Defaults to ``train``.
         transform (callable, optional): A function/transform that takes in a PIL image
@@ -47,13 +47,13 @@ class Kitti(VisionDataset):
 
     """
 
-    data_url = "https://s3.eu-central-1.amazonaws.com/avg-kitti/"
+    data_url = "none"
     resources = [
         "data_object_image_2.zip",
         "data_object_label_2.zip",
     ]
-    image_dir_name = "image_2"
-    labels_dir_name = "label_2"
+    image_dir_name = "image_0"   # front camera
+    labels_dir_name = "label_0"
     calib_dir_name = "calib"
 
     def __init__(
@@ -92,8 +92,6 @@ class Kitti(VisionDataset):
             if self.train:
                 self.targets.append(os.path.join(labels_dir, f"{img_file.split('.')[0]}.txt"))
                 self.calibrations.append(os.path.join(calib_dir, f"{img_file.split('.')[0]}.txt"))
-
- 
 
     def __getitem__(self, index: int) -> Tuple[Any, Any, Any, str]:
         """Get item at a given index.

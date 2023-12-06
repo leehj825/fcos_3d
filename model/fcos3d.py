@@ -28,6 +28,7 @@ __all__ = [
     "fcos3d",
 ]
 
+# Reference: https://github.com/pytorch/vision/blob/main/torchvision/models/detection/fcos.py
 
 class FCOSHead(nn.Module):
     """

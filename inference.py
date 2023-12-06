@@ -10,8 +10,8 @@ from tqdm.auto import tqdm
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 import dataset.kitti as kitti
+import dataset.waymo as waymo
 import model.fcos3d as fcos3d
-
 from torchvision.models.detection import fcos
 from torchvision.datasets import VOCDetection
 import torchvision.transforms.functional as TF
@@ -35,20 +35,26 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 # Define class mapping for the KITTI dataset
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
-default_data_path="data/kitti_200/"
+# Default paths and parameters for KITTI dataset
+default_kitti_data_path = "data/kitti_200/"
+default_kitti_image_path = '/Users/hyejunlee/NN_Scratch/data/kitti/training/image_2/000025.png'
+default_kitti_label_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/label_2/'
+default_kitti_calib_folder = '/Users/hyejunlee/NN_Scratch/data/kitti/training/calib/'
+
+# Default paths and parameters for Waymo dataset
+default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/label_0/'
+default_waymo_calib_folder = '/Users/hyejunlee/NN_Scratch/data/waymo_single/training/calib/'
+# Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_2d_19.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_2d_85.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_save_state_19_05.png' 
-
-
-default_label_folder ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
-default_calib_folder ='/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
-default_output_image_path = '/Users/hyejunlee/fcos_3d/output19'
+default_output_image_path = '/Users/hyejunlee/fcos_3d/output85'
 num_images = 10
 
 # Check if the directory exists
@@ -60,46 +66,66 @@ if not os.path.exists(default_output_image_path):
 device = "cpu"
 print(device)
 
-def custom_collate(batch):
-    resize_transform = transforms.Compose([
+def custom_collate(batch, dataset_name):
+    # Check each data entry in the batch
+    for data in batch:
+        images, targets, calib_data, _ = data
+        # If any of images, targets, or calib_data is None, return None for the entire batch
+        if images is None or targets is None or calib_data is None:
+            return None
+    
+    # Define resize transformations for KITTI and Waymo datasets
+    resize_transform_kitti = transforms.Compose([
         transforms.Resize((375, 1242)),
         transforms.ToTensor()
     ])
+    resize_transform_waymo = transforms.Compose([
+        transforms.Resize((1280, 1920)),  # Example resize for Waymo; adjust as needed
+        transforms.ToTensor()
+    ])
+
     images, targets, calib_data, image_path = zip(*batch)
     
-    images = [resize_transform(img) for img in images]
+    # Apply the appropriate resize transformation based on the dataset
+    if dataset_name == 'kitti':
+        images = [resize_transform_kitti(img) for img in images]
+    elif dataset_name == 'waymo':
+        images = [resize_transform_waymo(img) for img in images]
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+
     images = torch.stack(images, 0).to(device)
 
-    # Calibration data is already in the required format, so we just pass it as is
-    # If any further processing is needed, add it here
+    # Calibration data handling might differ between datasets
+    # ...
 
     return images, targets, calib_data, image_path
 
-def preprocess_image(img_path):
-    # Preprocess the image for inference
-    #image = Image.open(img_path).convert("RGB")
+def preprocess_image(img_path, dataset_name):
     image = Image.open(img_path)
-    resize_transform = transforms.Compose([
-        transforms.Resize((375, 1242)),
-        transforms.ToTensor()
-    ])
+
+    # Apply the appropriate resize transformation based on the dataset
+    if dataset_name == 'kitti':
+        resize_transform = transforms.Compose([
+            transforms.Resize((375, 1242)),
+            transforms.ToTensor()
+        ])
+    elif dataset_name == 'waymo':
+        resize_transform = transforms.Compose([
+            transforms.Resize((1280, 1920)),  # Example resize for Waymo; adjust as needed
+            transforms.ToTensor()
+        ])
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+
     image = resize_transform(image).unsqueeze(0).to(device)
     return image
 
-def inference_old(model, image_path):
+def inference(model, image_path, dataset_name):
     # Perform inference on a given image
     model.eval()
     with torch.no_grad():
-        image = preprocess_image(image_path)
-        prediction = model(image)
-        # Post-process the output if necessary
-    return prediction
-
-def inference(model, image_path):
-    # Perform inference on a given image
-    model.eval()
-    with torch.no_grad():
-        image = preprocess_image(image_path)
+        image = preprocess_image(image_path, dataset_name)
         predictions = model(image)
         # Example post-processing (adjust as per your model's output format)
         # Assuming predictions is a list of dictionaries with 'boxes', 'scores', 'labels', 'dimensions', 'locations', 'rotations' keys
@@ -173,7 +199,15 @@ def create_3d_bbox(dimensions, location, rotation_y):
 
 # Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
 
-def save_combined_image(boxes, scores, labels, dimensions, locations, orientation, image_path, output_image_path):
+def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, orientation, image_path, output_image_path):
+    
+    if dataset_name == 'kitti':
+        default_calib_folder = default_kitti_calib_folder
+        default_label_folder = default_kitti_label_folder
+    elif dataset_name == 'waymo':
+        default_calib_folder = default_waymo_calib_folder
+        default_label_folder = default_waymo_label_folder
+    
     # Open the original image
     image_gt = Image.open(image_path)
     draw_gt = ImageDraw.Draw(image_gt)
@@ -185,6 +219,10 @@ def save_combined_image(boxes, scores, labels, dimensions, locations, orientatio
     calib_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
     calib_path = os.path.join(default_calib_folder, calib_file)
 
+    # Get label file path
+    label_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
+    label_path = os.path.join(default_label_folder, label_file)
+
 
     # Read calibration data
     calib_data = {}
@@ -194,13 +232,17 @@ def save_combined_image(boxes, scores, labels, dimensions, locations, orientatio
                 key, value = line.split(':', 1)
                 calib_data[key] = np.fromstring(value, sep=' ')
 
-    # Extract P2 calibration matrix
-    P = calib_data.get('P2').reshape(3, 4) if 'P2' in calib_data else None
+    # Extract calibration matrix
+    if dataset_name == 'kitti':
+        P = calib_data.get('P2').reshape(3, 4) if 'P2' in calib_data else None
+    elif dataset_name == 'waymo':
+        P = calib_data.get('P0').reshape(3, 4) if 'P0' in calib_data else None
+
     if P is None:
-        raise ValueError("P2 calibration matrix not found in calibration data.")
+        raise ValueError("P2 (kitti) or P0 (waymo) calibration matrix not found in calibration data.")
 
     # Draw ground truth bounding boxes in yellow and 3D bounding boxes
-    with open(default_label_folder + os.path.basename(image_path).replace('.png', '.txt'), 'r') as f:
+    with open(label_path, 'r') as f:
         for line in f.readlines():
             parts = line.strip().split()
             bbox = [float(parts[i]) for i in range(4, 8)]  # 2D bounding box
@@ -239,7 +281,7 @@ def save_combined_image(boxes, scores, labels, dimensions, locations, orientatio
     combined_image.save(output_image_path)
 
 
-def main(mode='inference', image_path=None, load=None):
+def main(mode='inference', dataset_name='kitti', image_path=None, load=None):
     # Main function to handle training and inference
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -259,11 +301,18 @@ def main(mode='inference', image_path=None, load=None):
 
     model.zero_grad()
 
-    # Load the KITTI dataset
-    dataset = kitti.Kitti(root=default_data_path, train=True)
+    # Load the appropriate dataset
+    if dataset_name == 'kitti':
+        dataset = kitti.Kitti(root=default_kitti_data_path, train=True)
+    elif dataset_name == 'waymo':
+        dataset = waymo.Waymo(root=default_waymo_data_path, train=True)  # Ensure this is correctly implemented
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
     
+
     # Define a data loader
-    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
+    #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
     #num_epochs = 500
     #start_epoch = 0
@@ -340,12 +389,12 @@ def main(mode='inference', image_path=None, load=None):
             images = images.to(device)
             original_image_path = image_paths[0]
 
-            detections = inference(model,original_image_path)
+            detections = inference(model,original_image_path, dataset_name)
             boxes, scores, labels, dimensions, locations, rotations = detections
 
             #print(detections)
             original_image_path = image_paths[0]
-            save_combined_image(boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
+            save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
             processed_images += images.size(0)
 
@@ -354,7 +403,8 @@ def main(mode='inference', image_path=None, load=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')
     parser.add_argument('--mode', type=str, default='inference', choices=['train', 'inference'], help='Mode to run the script in')
-    parser.add_argument('--image_path', default=default_image_path, type=str, help='Path to the image for inference mode')
+    parser.add_argument('--dataset', type=str, default='kitti', choices=['kitti', 'waymo'], help='Dataset to use')
+    parser.add_argument('--image_path', default=default_kitti_image_path, type=str, help='Path to the image for inference mode')
     parser.add_argument('--load', default=default_load_checkpoint, type=str, help='Path to the pretrained model file')
     args = parser.parse_args()
-    main(mode=args.mode, image_path=args.image_path, load=args.load)
+    main(mode=args.mode, dataset_name=args.dataset, image_path=args.image_path, load=args.load)
