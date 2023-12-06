@@ -37,7 +37,7 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
-#default_load_checkpoint = 'save_state_32.bin'
+#default_load_checkpoint = 'save_state_4.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
@@ -387,7 +387,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()
-                }, f"./save_state_{epoch+1}.bin")
+                }, f"./save_state_{dataset_name}_{epoch+1}.bin")
 
     elif mode == 'inference':
         device = "cpu"
