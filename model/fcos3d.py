@@ -78,7 +78,7 @@ class FCOSHead(nn.Module):
                 gt_classes_targets = targets_per_image["labels"].new_zeros((len(matched_idxs_per_image),))
                 gt_boxes_targets = targets_per_image["boxes"].new_zeros((len(matched_idxs_per_image), 4))
                 gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
-                gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 4)) # Assuming quaternion or similar representation
+                gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
                 gt_location_targets = targets_per_image["locations_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D location
             else:
                 gt_classes_targets = targets_per_image["labels"][matched_idxs_per_image.clip(min=0)]
@@ -169,7 +169,7 @@ class FCOSHead(nn.Module):
         loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
         loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
-        loss_location_3d = nn.functional.smooth_l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
+        loss_location_3d = nn.functional.smooth_l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")/3
 
 
         return {

@@ -270,7 +270,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
     print(device)
 
     # Load the pre-trained FCOS model
-    model = fcos3d.fcos3d(weights_backbone=ResNet101_Weights.IMAGENET1K_V1, num_classes=3, _skip_resize=True)
+    model = fcos3d.fcos3d(weights_backbone=ResNet101_Weights.IMAGENET1K_V1, num_classes=3)
     model = model.to(device)
 
     # Construct an optimizer
