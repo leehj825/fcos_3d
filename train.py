@@ -335,7 +335,6 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     orientations_y = []  # Rotation around the Y-axis
                     calib_1 = []  # Rotation around the Y-axis
                     calib_2 = []  # Rotation around the Y-axis
-                    calib_3 = []  # Rotation around the Y-axis
 
                     for target in image_targets:
                         if target["type"] in CLASS_MAPPING:
@@ -353,7 +352,6 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                                 # Select calibration matrix based on dataset_name
                                 calib_1.append(calibration_matrix[0]) # rotation y
                                 calib_2.append(calibration_matrix[1]) # rotation y
-                                calib_3.append(calibration_matrix[2]) # rotation y
 
                     # Only proceed if there are valid targets
                     if boxes:
@@ -364,8 +362,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                             'locations_3d': torch.tensor(locations_3d, dtype=torch.float32).to(device),
                             'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device),
                             'calib_1': torch.tensor(calib_1, dtype=torch.float32).to(device),
-                            'calib_2': torch.tensor(calib_2, dtype=torch.float32).to(device),
-                            'calib_3': torch.tensor(calib_3, dtype=torch.float32).to(device)
+                            'calib_2': torch.tensor(calib_2, dtype=torch.float32).to(device)
                         }
                         target_list.append(target_dict)
 

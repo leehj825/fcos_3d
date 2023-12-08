@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_hpc_53.bin'
-#default_load_checkpoint = 'save_state_waymo_hpc_13.bin'
+default_load_checkpoint = 'save_state_kitti_hpc_61.bin'
+#default_load_checkpoint = 'save_state_waymo_hpc_15.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_hpc_53'
-#default_output_image_path = 'output_waymo_hpc_13'
+default_output_image_path = 'output_kitti_hpc_61'
+#default_output_image_path = 'output_waymo_hpc_15'
 num_images = 5
 
 # Check if the directory exists
