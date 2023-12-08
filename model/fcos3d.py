@@ -54,10 +54,8 @@ class FCOSHead(nn.Module):
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
     
     @staticmethod
-    def log_scale_calib(calib_data):
-        # Apply a small constant to avoid log(0)
-        epsilon = 1e-6
-        return nn.functional.relu(torch.log(calib_data + epsilon))
+    def scale_calib(calib_data):
+        return calib_data / 100.0
 
     def compute_loss(
         self,
@@ -101,9 +99,9 @@ class FCOSHead(nn.Module):
                 gt_orientation_targets = targets_per_image["orientations_y"][matched_idxs_per_image.clip(min=0)]
                 gt_location_targets = targets_per_image["locations_3d"][matched_idxs_per_image.clip(min=0)]
                 #print("targets_per_image[\"calib_1\"][matched_idxs_per_image.clip(min=0)]", targets_per_image["calib_1"][matched_idxs_per_image.clip(min=0)])
-                gt_calib_1_targets = self.log_scale_calib(targets_per_image["calib_1"][matched_idxs_per_image.clip(min=0)])
+                gt_calib_1_targets = self.scale_calib(targets_per_image["calib_1"][matched_idxs_per_image.clip(min=0)])
                 #print("gt_calib_1_targets", gt_calib_1_targets)
-                gt_calib_2_targets = self.log_scale_calib(targets_per_image["calib_2"][matched_idxs_per_image.clip(min=0)])
+                gt_calib_2_targets = self.scale_calib(targets_per_image["calib_2"][matched_idxs_per_image.clip(min=0)])
 
             gt_classes_targets[matched_idxs_per_image < 0] = -1  # background
             all_gt_classes_targets.append(gt_classes_targets)
@@ -198,12 +196,12 @@ class FCOSHead(nn.Module):
 
 
         # Apply log scaling to predicted and target values of calib_1 and calib_2
-        pred_calib_1 = self.log_scale_calib(calib_1.squeeze(dim=2))
-        pred_calib_2 = self.log_scale_calib(calib_2.squeeze(dim=2))
+        pred_calib_1 = self.scale_calib(calib_1.squeeze(dim=2))
+        pred_calib_2 = self.scale_calib(calib_2.squeeze(dim=2))
 
         # Compute smooth L1 loss for calib_1 and calib_2
-        loss_calib_1 = nn.functional.smooth_l1_loss(pred_calib_1[foregroud_mask], all_gt_calib_1_targets[foregroud_mask], reduction="sum")
-        loss_calib_2 = nn.functional.smooth_l1_loss(pred_calib_2[foregroud_mask], all_gt_calib_2_targets[foregroud_mask], reduction="sum")
+        loss_calib_1 = nn.functional.smooth_l1_loss(pred_calib_1[foregroud_mask], all_gt_calib_1_targets[foregroud_mask], reduction="sum")/4
+        loss_calib_2 = nn.functional.smooth_l1_loss(pred_calib_2[foregroud_mask], all_gt_calib_2_targets[foregroud_mask], reduction="sum")/4
 
 
         return {
