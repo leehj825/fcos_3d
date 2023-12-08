@@ -23,6 +23,8 @@ from torchvision.models.resnet import ResNet101_Weights
 # Util functions from torchvision
 from torchvision.models.detection import _utils as det_utils
 
+import metric.metric as metric
+
 __all__ = [
     "FCOS",
     "fcos3d",
@@ -66,12 +68,18 @@ class FCOSHead(nn.Module):
         dimensions_3d = head_outputs["dimensions_3d"]  # [N, HWA, 3]
         orientation = head_outputs["orientation"]  # [N, HWA, 1]
         location_3d = head_outputs["location_3d"]  # [N, HWA, 3]
+        calib_1 = head_outputs["calib_1"]  # [N, HWA, 4]
+        calib_2 = head_outputs["calib_2"]  # [N, HWA, 4]
+        calib_3 = head_outputs["calib_3"]  # [N, HWA, 4]
 
         all_gt_classes_targets = []
         all_gt_boxes_targets = []
         all_gt_dimensions_targets = []  # For 3D dimensions
         all_gt_orientation_targets = [] # For orientation
         all_gt_location_targets = []    # For location
+        all_gt_calib_1_targets = []
+        all_gt_calib_2_targets = []
+        all_gt_calib_3_targets = []
 
         for targets_per_image, matched_idxs_per_image in zip(targets, matched_idxs):
             if len(targets_per_image["labels"]) == 0:
@@ -80,12 +88,18 @@ class FCOSHead(nn.Module):
                 gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
                 gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
                 gt_location_targets = targets_per_image["locations_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D location
+                gt_calib_1_targets = targets_per_image["calib_1"].new_zeros((len(matched_idxs_per_image), 4))
+                gt_calib_2_targets = targets_per_image["calib_2"].new_zeros((len(matched_idxs_per_image), 4))
+                gt_calib_3_targets = targets_per_image["calib_3"].new_zeros((len(matched_idxs_per_image), 4))
             else:
                 gt_classes_targets = targets_per_image["labels"][matched_idxs_per_image.clip(min=0)]
                 gt_boxes_targets = targets_per_image["boxes"][matched_idxs_per_image.clip(min=0)]
                 gt_dimensions_targets = targets_per_image["dimensions_3d"][matched_idxs_per_image.clip(min=0)]
                 gt_orientation_targets = targets_per_image["orientations_y"][matched_idxs_per_image.clip(min=0)]
                 gt_location_targets = targets_per_image["locations_3d"][matched_idxs_per_image.clip(min=0)]
+                gt_calib_1_targets = targets_per_image["calib_1"][matched_idxs_per_image.clip(min=0)]
+                gt_calib_2_targets = targets_per_image["calib_2"][matched_idxs_per_image.clip(min=0)]
+                gt_calib_3_targets = targets_per_image["calib_3"][matched_idxs_per_image.clip(min=0)]
 
             gt_classes_targets[matched_idxs_per_image < 0] = -1  # background
             all_gt_classes_targets.append(gt_classes_targets)
@@ -93,14 +107,20 @@ class FCOSHead(nn.Module):
             all_gt_dimensions_targets.append(gt_dimensions_targets)
             all_gt_orientation_targets.append(gt_orientation_targets)
             all_gt_location_targets.append(gt_location_targets)
+            all_gt_calib_1_targets.append(gt_calib_1_targets)
+            all_gt_calib_2_targets.append(gt_calib_2_targets)
+            all_gt_calib_3_targets.append(gt_calib_3_targets)
 
         # List[Tensor] to Tensor conversion
-        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_location_targets, anchors = (
+        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_location_targets, all_gt_calib_1_targets, all_gt_calib_2_targets, all_gt_calib_3_targets, anchors = (
             torch.stack(all_gt_boxes_targets),
             torch.stack(all_gt_classes_targets),
             torch.stack(all_gt_dimensions_targets),
             torch.stack(all_gt_orientation_targets),
             torch.stack(all_gt_location_targets),
+            torch.stack(all_gt_calib_1_targets),
+            torch.stack(all_gt_calib_2_targets),
+            torch.stack(all_gt_calib_3_targets),
             torch.stack(anchors),
         )
 
@@ -165,11 +185,17 @@ class FCOSHead(nn.Module):
         pred_dimensions_3d = dimensions_3d.squeeze(dim=2)
         pred_orientation = orientation.squeeze(dim=2)
         pred_location_3d = location_3d.squeeze(dim=2)
+        pred_calib_1 = calib_1.squeeze(dim=2)
+        pred_calib_2 = calib_2.squeeze(dim=2)
+        pred_calib_3 = calib_3.squeeze(dim=2)
 
         loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
         loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
         loss_location_3d = nn.functional.smooth_l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")/3
+        loss_calib_1 = nn.functional.smooth_l1_loss(pred_calib_1[foregroud_mask], all_gt_calib_1_targets[foregroud_mask], reduction="mean")
+        loss_calib_2 = nn.functional.smooth_l1_loss(pred_calib_2[foregroud_mask], all_gt_calib_2_targets[foregroud_mask], reduction="mean")
+        loss_calib_3 = nn.functional.smooth_l1_loss(pred_calib_3[foregroud_mask], all_gt_calib_3_targets[foregroud_mask], reduction="sum")
 
 
         return {
@@ -178,12 +204,15 @@ class FCOSHead(nn.Module):
             "bbox_ctrness": loss_bbox_ctrness / max(1, num_foreground),
             "dimensions_3d": loss_dimensions_3d / max(1, num_foreground),
             "orientation": loss_orientation / max(1, num_foreground),
-            "location_3d": loss_location_3d / max(1, num_foreground)
+            "location_3d": loss_location_3d / max(1, num_foreground),
+            "calib_1": loss_calib_1 / max(1, num_foreground),
+            "calib_2": loss_calib_2 / max(1, num_foreground),
+            "calib_3": loss_calib_3 / max(1, num_foreground)
         }
 
     def forward(self, x: List[Tensor]) -> Dict[str, Tensor]:
         cls_logits = self.classification_head(x)
-        bbox_regression, bbox_ctrness, dimensions_3d, orientation, location_3d = self.regression_head(x)
+        bbox_regression, bbox_ctrness, dimensions_3d, orientation, location_3d, calib_1, calib_2, calib_3  = self.regression_head(x)
         #print("regression_head dimensions_3d", dimensions_3d)
         #print("regression_head bbox_regression", bbox_regression)
         return {
@@ -193,6 +222,9 @@ class FCOSHead(nn.Module):
             "dimensions_3d": dimensions_3d,
             "orientation": orientation,
             "location_3d": location_3d,
+            "calib_1": calib_1,
+            "calib_2": calib_2,
+            "calib_3": calib_3,
         }
 
 
@@ -298,7 +330,10 @@ class FCOSRegressionHead(nn.Module):
         self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
         self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
         self.location_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.location_3d_head]:
+        self.calib_1_head = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
+        self.calib_2_head = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
+        self.calib_3_head = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
+        for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.location_3d_head, self.calib_1_head, self.calib_2_head, self.calib_3_head]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
 
@@ -307,12 +342,15 @@ class FCOSRegressionHead(nn.Module):
                 torch.nn.init.normal_(layer.weight, std=0.01)
                 torch.nn.init.zeros_(layer.bias)
 
-    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         all_bbox_regression = []
         all_bbox_ctrness = []
         all_dimensions_3d = []
         all_orientation = []
         all_location_3d = []
+        all_calib_1 = []
+        all_calib_2 = []
+        all_calib_3 = []
 
         for features in x:
             bbox_feature = self.conv(features)
@@ -324,6 +362,9 @@ class FCOSRegressionHead(nn.Module):
             dimensions_3d = self.dimensions_3d_head(bbox_feature)
             orientation = self.orientation_head(bbox_feature)
             location_3d = self.location_3d_head(bbox_feature)
+            calib_1 = self.calib_1_head(bbox_feature)
+            calib_2 = self.calib_2_head(bbox_feature)
+            calib_3 = self.calib_3_head(bbox_feature)
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -338,30 +379,51 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = bbox_ctrness.reshape(N, -1, 1)
             all_bbox_ctrness.append(bbox_ctrness)
 
-            # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
+            # permute dimensions_3d output from (N, 3 * A, H, W) to (N, HWA, 3).
             dimensions_3d = dimensions_3d.view(N, -1, 3, H, W)
             dimensions_3d = dimensions_3d.permute(0, 3, 4, 1, 2)
             dimensions_3d = dimensions_3d.reshape(N, -1, 3)
             all_dimensions_3d.append(dimensions_3d)
 
-            # permute bbox ctrness output from (N, 1 * A, H, W) to (N, HWA, 1).
+            # permute orientation output from (N, 1 * A, H, W) to (N, HWA, 1).
             orientation = orientation.view(N, -1, 1, H, W)
             orientation = orientation.permute(0, 3, 4, 1, 2)
             orientation = orientation.reshape(N, -1, 1)
             all_orientation.append(orientation)
 
-            # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
+            # permute location_3d output from (N, 3 * A, H, W) to (N, HWA, 3).
             location_3d = location_3d.view(N, -1, 3, H, W)
             location_3d = location_3d.permute(0, 3, 4, 1, 2)
             location_3d = location_3d.reshape(N, -1, 3)
             all_location_3d.append(location_3d)
+
+            # permute calibration output from (N, 4 * A, H, W) to (N, HWA, 4).
+            calib_1 = calib_1.view(N, -1, 4, H, W)
+            calib_1 = calib_1.permute(0, 3, 4, 1, 2)
+            calib_1 = calib_1.reshape(N, -1, 4)
+            all_calib_1.append(calib_1)
+
+            # permute calibration output from (N, 4 * A, H, W) to (N, HWA, 4).
+            calib_2 = calib_2.view(N, -1, 4, H, W)
+            calib_2 = calib_2.permute(0, 3, 4, 1, 2)
+            calib_2 = calib_2.reshape(N, -1, 4)
+            all_calib_2.append(calib_2)
+
+            # permute calibration output from (N, 4 * A, H, W) to (N, HWA, 4).
+            calib_3 = calib_3.view(N, -1, 4, H, W)
+            calib_3 = calib_3.permute(0, 3, 4, 1, 2)
+            calib_3 = calib_3.reshape(N, -1, 4)
+            all_calib_3.append(calib_3)
 
         return (
             torch.cat(all_bbox_regression, dim=1),
             torch.cat(all_bbox_ctrness, dim=1),
             torch.cat(all_dimensions_3d, dim=1),
             torch.cat(all_orientation, dim=1),
-            torch.cat(all_location_3d, dim=1)
+            torch.cat(all_location_3d, dim=1),
+            torch.cat(all_calib_1, dim=1),
+            torch.cat(all_calib_2, dim=1),
+            torch.cat(all_calib_3, dim=1)
         )
 
 class FCOS(nn.Module):
@@ -468,8 +530,8 @@ class FCOS(nn.Module):
         anchor_generator: Optional[AnchorGenerator] = None,
         head: Optional[nn.Module] = None,
         center_sampling_radius: float = 1.5,
-        score_thresh: float = 0.2,
-        nms_thresh: float = 0.6,
+        score_thresh: float = 0.5,
+        nms_thresh: float = 0.3,
         detections_per_img: int = 100,
         topk_candidates: int = 1000,
         **kwargs,
@@ -670,6 +732,8 @@ class FCOS(nn.Module):
             image_orientation = torch.cat(image_orientation, dim=0)
 
             # Filter based on NMS keep indices
+            # Now apply custom 3D NMS
+            #keep = metric.nms_3d(image_dimensions_3d, image_locations_3d, image_orientation, image_scores, self.nms_thresh)
             keep = box_ops.batched_nms(image_boxes, image_scores, image_labels, self.nms_thresh)
             keep = keep[: self.detections_per_img]
             #image_boxes = image_boxes[keep]
