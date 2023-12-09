@@ -55,6 +55,7 @@ class Waymo(VisionDataset):
     image_dir_name = "image_0"   # front camera
     labels_dir_name = "label_0"
     calib_dir_name = "calib"
+    calib_data_key = "P0"
 
     def __init__(
         self,
@@ -126,25 +127,22 @@ class Waymo(VisionDataset):
         return image, target, calib_data, image_path
 
     def _parse_calibration(self, index: int):
-        #calib_path = os.path.join(self.root, self._location, "calib", self.images[index].split('/')[-1].replace('.jpg', '.txt'))
-        calib_data = {}
         with open(self.calibrations[index], 'r') as f:
             for line in f:
                 # Skip empty lines
                 if not line.strip():
                     continue
-                #print("line", line)
-                key, value = line.split(':', 1)
-                #print("key", key)
-                #print("value", value)
-                values = [float(x) for x in value.split()]
-                # Adjust the reshape based on the number of elements
-                if len(values) == 12:
-                    calib_data[key] = np.array(values).reshape(3, 4)
-                elif len(values) == 9:
-                    calib_data[key] = np.array(values).reshape(3, 3)
 
-        return calib_data
+                key, value = line.split(':', 1)
+                if key == self.calib_data_key:
+                    # Found P0, process and return it
+                    values = [float(x) for x in value.split()]
+                    calib_data = np.array(values).reshape(3, 4)
+                    return calib_data
+
+        # If P0 is not found in the file, handle it appropriately
+        # For example, you can return None or raise an error
+        return None
 
     def _parse_target(self, index: int) -> List:
         target = []

@@ -313,13 +313,6 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     continue
                 #print("batch_data", batch_data)
                 images, targets, calib_data, image_paths = batch_data
-
-                if dataset_name == "waymo":
-                    calibration_matrix = calib_data[0]['P0']
-                elif dataset_name == "kitti":
-                    calibration_matrix = calib_data[0]['P2']
-                else:
-                    raise ValueError("Unknown dataset name")
                     
                 # Extract the original image size (height, width) from the images tensor
                 _, _, orig_height, orig_width = images.size()
@@ -350,8 +343,8 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                                 locations_3d.append(target["location"])     # [x, y, z]
                                 orientations_y.append(target["rotation_y"]) # rotation y
                                 # Select calibration matrix based on dataset_name
-                                calib_1.append(calibration_matrix[0]) # rotation y
-                                calib_2.append(calibration_matrix[1]) # rotation y
+                                calib_1.append(calib_data[0]) # rotation y
+                                calib_2.append(calib_data[1]) # rotation y
 
                     # Only proceed if there are valid targets
                     if boxes:

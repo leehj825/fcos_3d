@@ -678,6 +678,7 @@ class FCOS(nn.Module):
             image_labels = []
             image_dimensions_3d = []
             image_locations_3d = []
+            image_orientation = []
             image_calib_1 = []
             image_calib_2 = []
 
