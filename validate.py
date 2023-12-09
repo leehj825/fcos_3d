@@ -338,7 +338,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             calib_1_np = calib_1.numpy() if isinstance(calib_1, torch.Tensor) else calib_1
             calib_2_np = calib_2.numpy() if isinstance(calib_2, torch.Tensor) else calib_2
             P_pred = np.array([calib_1_np, calib_2_np, [0.0, 0.0, 1.0, 0.0]])
-            print("P_pred", P_pred)
+            #print("P_pred", P_pred)
 
             # Draw 3D box
             #corners_3d = create_3d_bbox(dimension, location, orientation)
@@ -348,10 +348,10 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #draw_3d_box(draw_gt, corners_2d, color="blue")
 
             corners_3d = create_3d_bbox_2d(dimension, box, location[2], orientation, P_pred)
-            print("box", box)
-            print("corners_3d", corners_3d)
+            #print("box", box)
+            #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P_pred)
-            print("corners_2d", corners_2d)
+            #print("corners_2d", corners_2d)
             #draw_3d_box(draw_pred, corners_2d, color="green")
             draw_3d_box(draw_gt, corners_2d, color="green")
     
