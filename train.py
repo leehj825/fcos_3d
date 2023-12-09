@@ -343,8 +343,9 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                                 locations_3d.append(target["location"])     # [x, y, z]
                                 orientations_y.append(target["rotation_y"]) # rotation y
                                 # Select calibration matrix based on dataset_name
-                                calib_1.append(calib_data[0]) # rotation y
-                                calib_2.append(calib_data[1]) # rotation y
+                                #print("calib_data", calib_data)
+                                calib_1.append(calib_data[0][0]) # rotation y
+                                calib_2.append(calib_data[0][1]) # rotation y
 
                     # Only proceed if there are valid targets
                     if boxes:
@@ -370,11 +371,13 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 
                 # Print each loss component for the current batch
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
+                
+                # Print every 5 batches
+                if (batch_idx + 1) % 5 == 0:
+                    for loss_name, loss_value in loss_dict.items():
+                        loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 
-                for loss_name, loss_value in loss_dict.items():
-                    loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
-
-                print(loss_info.strip(", "))
+                    print(loss_info.strip(", "))
 
                 losses = sum(loss for loss in loss_dict.values())
                 loss_value = losses.item()
@@ -389,7 +392,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
             scheduler.step(loss_value)
 
             # Save checkpoint
-            if (epoch+1) % 1 == 0:
+            if (epoch+1) % 10 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),

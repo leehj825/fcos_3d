@@ -57,11 +57,11 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_calib_47.bin'
+default_load_checkpoint = 'save_state_kitti_calib_67.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_calib_47'
+default_output_image_path = 'output_kitti_calib_67'
 #default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
@@ -278,8 +278,8 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     image_gt = Image.open(image_path)
     draw_gt = ImageDraw.Draw(image_gt)
 
-    #image_pred = Image.open(image_path)
-    #draw_pred = ImageDraw.Draw(image_pred)
+    image_pred = Image.open(image_path)
+    draw_pred = ImageDraw.Draw(image_pred)
 
     # Get label file path
     #calib_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
@@ -353,16 +353,16 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             corners_2d = project_to_image(corners_3d.T, P_pred)
             #print("corners_2d", corners_2d)
             #draw_3d_box(draw_pred, corners_2d, color="green")
-            draw_3d_box(draw_gt, corners_2d, color="green")
+            draw_3d_box(draw_pred, corners_2d, color="green")
     
     # Save the combined image
     #image.save(output_image_path)
 
     # Combine the two images (stack them vertically)
-    #combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
-    combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
+    combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
+    #combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
     combined_image.paste(image_gt, (0, 0))
-    #combined_image.paste(image_pred, (0, image_gt.height))
+    combined_image.paste(image_pred, (0, image_gt.height))
 
     # Save the combined image
     combined_image.save(output_image_path)
