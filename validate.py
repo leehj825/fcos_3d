@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_hpc_53.bin'
-#default_load_checkpoint = 'save_state_waymo_hpc_13.bin'
+#default_load_checkpoint = 'save_state_kitti_hpc_115.bin'
+default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_hpc_53'
-#default_output_image_path = 'output_waymo_hpc_13'
+#default_output_image_path = 'output_kitti_hpc_115'
+default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
 # Check if the directory exists
@@ -206,27 +206,82 @@ def create_3d_bbox(dimensions, location, rotation_y):
     corners_3d[2, :] += z
     return corners_3d
 
+def back_project_to_3d(x_2d, y_2d, z_depth, P):
+    # Inverting the intrinsic matrix
+    K = P[:, :3]
+
+    # Create the normalized image coordinates
+    x_normalized = (x_2d - K[0, 2]) / K[0, 0]
+    y_normalized = (y_2d - K[1, 2]) / K[1, 1]
+
+    # Scale by depth to get the 3D point
+    x_3d = x_normalized * z_depth
+    y_3d = y_normalized * z_depth
+
+    return np.array([x_3d, y_3d, z_depth])
+
+
+def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
+    # Dimensions of the bounding box
+    dimensions = dimensions.cpu().numpy() if isinstance(dimensions, torch.Tensor) else dimensions
+    rotation_y = rotation_y.item() if isinstance(rotation_y, torch.Tensor) else rotation_y
+
+    h, w, l = dimensions
+
+    # Use the center of the 2D bounding box as x, y
+    x_center_2d = (box_2d[0] + box_2d[2]) / 2
+    y_center_2d = (box_2d[1] + box_2d[3]) / 2
+
+    #print("location_z", location_z)
+    # Use the z-coordinate from the 3D location
+    z = location_z.item() if isinstance(location_z, torch.Tensor) else location_z
+
+    # Rotation matrix around the Y-axis
+    R = np.array([
+        [np.cos(rotation_y), 0, np.sin(rotation_y)],
+        [0, 1, 0],
+        [-np.sin(rotation_y), 0, np.cos(rotation_y)]
+    ])
+    
+    # Assuming you have access to the intrinsic matrix K for your camera
+    x_center_3d, y_center_3d, z_depth= back_project_to_3d(x_center_2d, y_center_2d, z, P)
+
+    # 3D bounding box corners
+    x_corners = [l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2]
+    #y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+    y_corners = [h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2]
+    z_corners = [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2]
+
+    # Rotate and translate 3D bounding box corners
+    corners_3d = np.dot(R, np.vstack([x_corners, y_corners, z_corners]))
+    corners_3d[0, :] += x_center_3d
+    corners_3d[1, :] += y_center_3d
+    corners_3d[2, :] += z_depth
+
+    return corners_3d
+
+
 # Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
 
-def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, orientation, image_path, output_image_path):
+def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, locations, orientation, image_path, output_image_path):
     
     if dataset_name == 'kitti':
-        default_calib_folder = default_kitti_calib_folder
+        #default_calib_folder = default_kitti_calib_folder
         default_label_folder = default_kitti_label_folder
     elif dataset_name == 'waymo':
-        default_calib_folder = default_waymo_calib_folder
+        #default_calib_folder = default_waymo_calib_folder
         default_label_folder = default_waymo_label_folder
     
     # Open the original image
     image_gt = Image.open(image_path)
     draw_gt = ImageDraw.Draw(image_gt)
 
-    image_pred = Image.open(image_path)
-    draw_pred = ImageDraw.Draw(image_pred)
+    #image_pred = Image.open(image_path)
+    #draw_pred = ImageDraw.Draw(image_pred)
 
     # Get label file path
-    calib_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
-    calib_path = os.path.join(default_calib_folder, calib_file)
+    #calib_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
+    #calib_path = os.path.join(default_calib_folder, calib_file)
 
     # Get label file path
     label_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
@@ -234,19 +289,19 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
 
 
     # Read calibration data
-    calib_data = {}
-    with open(calib_path, 'r') as calib_file:
-        for line in calib_file:
-            if ':' in line:  # Ensure line contains a colon
-                key, value = line.split(':', 1)
-                calib_data[key] = np.fromstring(value, sep=' ')
+    #calib_data = {}
+    #with open(calib_path, 'r') as calib_file:
+    #    for line in calib_file:
+    #        if ':' in line:  # Ensure line contains a colon
+    #            key, value = line.split(':', 1)
+    #            calib_data[key] = np.fromstring(value, sep=' ')
 
     # Extract calibration matrix
-    if dataset_name == 'kitti':
-        P = calib_data.get('P2').reshape(3, 4) if 'P2' in calib_data else None
-    elif dataset_name == 'waymo':
-        P = calib_data.get('P0').reshape(3, 4) if 'P0' in calib_data else None
-
+    #if dataset_name == 'kitti':
+    #    P = calib_data.get('P2').reshape(3, 4) if 'P2' in calib_data else None
+    #elif dataset_name == 'waymo':
+    #    P = calib_data.get('P0').reshape(3, 4) if 'P0' in calib_data else None
+    P = calib_data
     if P is None:
         raise ValueError("P2 (kitti) or P0 (waymo) calibration matrix not found in calibration data.")
 
@@ -272,21 +327,32 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, location, orientation in zip(boxes, scores, labels, dimensions, locations, orientation):
         if score > 0.5:  # Threshold can be adjusted
-            draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+            #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box
-            corners_3d = create_3d_bbox(dimension, location, orientation)
+            #corners_3d = create_3d_bbox(dimension, location, orientation)
+
+            #corners_2d = project_to_image(corners_3d.T, P)
+            #print("corners_2d", corners_2d)
+            #draw_3d_box(draw_gt, corners_2d, color="blue")
+
+            corners_3d = create_3d_bbox_2d(dimension, box, location[2], orientation, P)
+            #print("bbox", box)
+            #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P)
-            draw_3d_box(draw_pred, corners_2d, color="green")
+            #print("corners_2d", corners_2d)
+            #draw_3d_box(draw_pred, corners_2d, color="green")
+            draw_3d_box(draw_gt, corners_2d, color="green")
     
     # Save the combined image
     #image.save(output_image_path)
 
     # Combine the two images (stack them vertically)
-    combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
+    #combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
+    combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
     combined_image.paste(image_gt, (0, 0))
-    combined_image.paste(image_pred, (0, image_gt.height))
+    #combined_image.paste(image_pred, (0, image_gt.height))
 
     # Save the combined image
     combined_image.save(output_image_path)
@@ -391,23 +457,16 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
         model = model.to(device)
 
         processed_images = 0
-        iou_thresholds = [0.4]  # Define the IoU thresholds you want to use
+        iou_thresholds = [0.0, 0.1, 0.2, 0.3, 0.4]  # Define the IoU thresholds you want to use
 
-        for batch_idx, (images, targets, _, image_paths) in enumerate(data_loader):
+        for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):
             if num_images and processed_images >= num_images:
                 break  # Stop if we have processed the desired number of images
 
             images = images.to(device)
 
             original_image_path = image_paths[0]
-
-            detections = inference(model,original_image_path, dataset_name)
-            boxes, scores, labels, dimensions, locations, rotations = detections
-
-            #print(detections)
-            original_image_path = image_paths[0]
-            save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
-
+            
             for idx, image in enumerate(images):
                 image_path = image_paths[idx]
                 single_image_predictions = []
@@ -417,37 +476,55 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 detections = inference(model, image_path, dataset_name)
                 boxes, scores, labels, dimensions, locations, rotations = detections
 
+                #print(detections)
+                original_image_path = image_paths[0]
+                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
+
+
                 # Convert detections to the required format
                 for i in range(len(boxes)):
+                    box_2d_center_x = (boxes[i][0] + boxes[i][2]) / 2
+                    box_2d_center_y = (boxes[i][1] + boxes[i][3]) / 2
+                    location_3d = back_project_to_3d(box_2d_center_x, box_2d_center_y, locations[i][-1], calib_data[idx][:, :3])  # Use z component from locations[i]
+                    #print("location_3d", location_3d)
+                    # Convert to list and ensure double precision
+                    location_3d = [float(coord) for coord in location_3d.tolist()] if isinstance(location_3d, (torch.Tensor, np.ndarray)) else location_3d
+                    dimension_3d = [float(dim) for dim in dimensions[i].tolist()] if isinstance(dimensions[i], (torch.Tensor, np.ndarray)) else dimensions[i]
+                    orientation = float(rotations[i].item()) if isinstance(rotations[i], torch.Tensor) else rotations[i]
+
                     pred_box = {
-                        'location_3d': locations[i],
-                        'dimension_3d': dimensions[i],
-                        'orientation': rotations[i]
+                        'location_3d': location_3d,
+                        'dimension_3d': dimension_3d,
+                        'orientation': orientation
                     }
+                    #print("pred_box", i , pred_box)
                     single_image_predictions.append(pred_box)
 
                 # Extract ground truth data for single image
                 image_targets = targets[idx]
                 for target in image_targets:
                     if target["type"] in CLASS_MAPPING:
-                        gt_box = {
-                            'location_3d': target['location'],
-                            'dimension_3d': target['dimensions'],
-                            'orientation': target['rotation_y']
-                        }
-                        single_image_ground_truths.append(gt_box)
+                        if target["bbox"][2] > target["bbox"][0] and target["bbox"][3] > target["bbox"][1]:  # Ensures width and height are positive
+                            #print("target['location']", target['location'])
+                            gt_box = {
+                                'location_3d': target['location'],
+                                'dimension_3d': target['dimensions'],
+                                'orientation': target['rotation_y']
+                            }
+                            single_image_ground_truths.append(gt_box)
 
                 # Compute mAP for single image
                 #map_value = metric.compute_map(single_image_predictions, single_image_ground_truths, iou_thresholds)
                 #print(f"Image: {image_path}, mAP: {map_value}")
+                #print("single_image_predictions", single_image_predictions)
+                #print("single_image_ground_truths", single_image_ground_truths)
 
                 # Compute mAP for single image
                 map_values_by_threshold = metric.compute_map(single_image_predictions, single_image_ground_truths, iou_thresholds)
 
                 # Print mAP for each threshold
                 print(f"Image: {image_path}")
-                for threshold, map_value in map_values_by_threshold.items():
-                    print(f"  IoU Threshold: {threshold}, mAP: {map_value}")
+                print(f"  mAP: {map_values_by_threshold}")
 
 
                 processed_images += 1

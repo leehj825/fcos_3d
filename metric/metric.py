@@ -3,298 +3,123 @@ import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
-# Reference: https://github.com/google-research-datasets/Objectron/blob/master/objectron/dataset/box.py
+def calculate_intersection_volume_3d(box_a, box_b):
+    #print("Calculating intersection volume between Box A and Box B.")
+    #print("box_a", box_a)
+    #print("box_b", box_b)
+    ax_min, ay_min, az_min = box_a['location_3d']
+    ax_max = ax_min + box_a['dimension_3d'][0]
+    ay_max = ay_min + box_a['dimension_3d'][1]
+    az_max = az_min + box_a['dimension_3d'][2]
 
-import numpy as np
-from scipy.spatial.transform import Rotation as R
+    bx_min, by_min, bz_min = box_b['location_3d']
+    bx_max = bx_min + box_b['dimension_3d'][0]
+    by_max = by_min + box_b['dimension_3d'][1]
+    bz_max = bz_min + box_b['dimension_3d'][2]
 
-# Constants for the Box class
-EDGES = (
-    [1, 5], [2, 6], [3, 7], [4, 8],  # lines along x-axis
-    [1, 3], [5, 7], [2, 4], [6, 8],  # lines along y-axis
-    [1, 2], [3, 4], [5, 6], [7, 8]   # lines along z-axis
-)
-FACES = np.array([
-    [5, 6, 8, 7],  # +x on yz plane
-    [1, 3, 4, 2],  # -x on yz plane
-    [3, 7, 8, 4],  # +y on xz plane = top
-    [1, 2, 6, 5],  # -y on xz plane
-    [2, 4, 8, 6],  # +z on xy plane = front
-    [1, 5, 7, 3],  # -z on xy plane
-])
-NUM_KEYPOINTS = 9
+    #print(f"Box A Bounds: X[{ax_min}, {ax_max}], Y[{ay_min}, {ay_max}], Z[{az_min}, {az_max}]")
+    #print(f"Box B Bounds: X[{bx_min}, {bx_max}], Y[{by_min}, {by_max}], Z[{bz_min}, {bz_max}]")
 
-class Box:
-    def __init__(self, vertices=None):
-        if vertices is None:
-            vertices = self.scaled_axis_aligned_vertices(np.array([1., 1., 1.]))
+    intersect_min_x = max(ax_min, bx_min)
+    intersect_min_y = max(ay_min, by_min)
+    intersect_min_z = max(az_min, bz_min)
+    intersect_max_x = min(ax_max, bx_max)
+    intersect_max_y = min(ay_max, by_max)
+    intersect_max_z = min(az_max, bz_max)
 
-        self._vertices = vertices
-        self._rotation = None
-        self._translation = None
-        self._scale = None
-        self._transformation = None
-        self._volume = None
+    #print(f"Intersection Bounds: X[{intersect_min_x}, {intersect_max_x}], Y[{intersect_min_y}, {intersect_max_y}], Z[{intersect_min_z}, {intersect_max_z}]")
 
-    @classmethod
-    def from_transformation(cls, rotation, translation, scale):
-        # Check if rotation is a tensor with a single value and convert it to float
-        if isinstance(rotation, torch.Tensor):
-            if rotation.numel() != 1:
-                raise ValueError('Rotation tensor should have a single element.')
-            rotation = rotation.item()  # Convert tensor to a single float value
+    if intersect_max_x > intersect_min_x and intersect_max_y > intersect_min_y and intersect_max_z > intersect_min_z:
+        intersection_volume = (intersect_max_x - intersect_min_x) * (intersect_max_y - intersect_min_y) * (intersect_max_z - intersect_min_z)
+        #print(f"Intersection Volume: {intersection_volume}")
+        return intersection_volume
+    else:
+        #print("No intersection between boxes.")
+        return 0
 
-        # Check if rotation is a float or int
-        if not isinstance(rotation, (float, int)):
-            raise ValueError('Rotation should be a float or int value representing rotation around Y-axis.')
-
-        # Construct the rotation matrix
-        c, s = np.cos(rotation), np.sin(rotation)
-        rotation_matrix = np.array([
-            [c, 0, s],
-            [0, 1, 0],
-            [-s, 0, c]
-        ])
-
-        scaled_identity_box = cls.scaled_axis_aligned_vertices(scale)
-        vertices = np.zeros((NUM_KEYPOINTS, 3))
-
-        # Convert translation to numpy array if it's not
-        if not isinstance(translation, np.ndarray):
-            translation = np.array(translation)
-
-        scaled_identity_box = cls.scaled_axis_aligned_vertices(scale)
-        vertices = np.zeros((NUM_KEYPOINTS, 3))
-        
-        translation = translation.flatten()  # Flatten the array
-
-        for i in range(NUM_KEYPOINTS):
-            rotated_point = np.matmul(rotation_matrix, scaled_identity_box[i, :])
-            vertices[i, :] = rotated_point + translation
-
-        return cls(vertices=vertices)
-
-
-    @classmethod
-    def scaled_axis_aligned_vertices(cls, scale):
-        w = scale[0] / 2.
-        h = scale[1] / 2.
-        d = scale[2] / 2.
-        aabb = np.array([[0., 0., 0.], [-w, -h, -d], [-w, -h, +d], [-w, +h, -d],
-                         [-w, +h, +d], [+w, -h, -d], [+w, -h, +d], [+w, +h, -d],
-                         [+w, +h, +d]])
-        return aabb
-
-    @classmethod
-    def fit(cls, vertices):
-        orientation = np.identity(3)
-        translation = np.zeros((3, 1))
-        scale = np.zeros(3)
-        for axis in range(3):
-            for edge_id in range(4):
-                begin, end = EDGES[axis * 4 + edge_id]
-                scale[axis] += np.linalg.norm(vertices[begin, :] - vertices[end, :])
-            scale[axis] /= 4.
-
-        x = cls.scaled_axis_aligned_vertices(scale)
-        system = np.concatenate((x, np.ones((NUM_KEYPOINTS, 1))), axis=1)
-        solution, _, _, _ = np.linalg.lstsq(system, vertices, rcond=None)
-        orientation = solution[:3, :3].T
-        translation = solution[3, :3]
-        return orientation, translation, scale
-
-    def inside(self, point):
-        inv_trans = np.linalg.inv(self.transformation)
-        scale = self.scale
-        point_w = np.matmul(inv_trans[:3, :3], point) + inv_trans[:3, 3]
-        for i in range(3):
-            if abs(point_w[i]) > scale[i] / 2.:
-                return False
-        return True
-
-    def sample(self):
-        point = np.random.uniform(-0.5, 0.5, 3) * self.scale
-        point = np.matmul(self.rotation, point) + self.translation
-        return point
-
-    @property
-    def vertices(self):
-        return self._vertices
-
-    @property
-    def rotation(self):
-        if self._rotation is None:
-            self._rotation, self._translation, self._scale = self.fit(self._vertices)
-        return self._rotation
-
-    @property
-    def translation(self):
-        if self._translation is None:
-            self._rotation, self._translation, self._scale = self.fit(self._vertices)
-        return self._translation
-
-    @property
-    def scale(self):
-        if self._scale is None:
-            self._rotation, self._translation, self._scale = self.fit(self._vertices)
-        return self._scale
-
-    @property
-    def volume(self):
-        if self._volume is None:
-            i = self._vertices[2, :] - self._vertices[1, :]
-            j = self._vertices[3, :] - self._vertices[1, :]
-            k = self._vertices[5, :] - self._vertices[1, :]
-            sys = np.array([i, j, k])
-            self._volume = abs(np.linalg.det(sys))
-        return self._volume
-
-    @property
-    def transformation(self):
-        if self._rotation is None:
-            self._rotation, self._translation, self._scale = self.fit(self._vertices)
-        if self._transformation is None:
-            self._transformation = np.identity(4)
-            self._transformation[:3, :3] = self._rotation
-            self._transformation[:3, 3] = self._translation
-        return self._transformation
-
-
-# Function to compute IoU
-def compute_iou_3d_old(pred_box, gt_box):
-    #print("Computing IoU pred_box:", pred_box)
-    #print("Computing IoU bgt_box:", gt_box)
-    
-    pred_box_3d = Box.from_transformation(pred_box['orientation'], pred_box['location_3d'], pred_box['dimension_3d'])
-    gt_box_3d = Box.from_transformation(gt_box['orientation'], gt_box['location_3d'], gt_box['dimension_3d'])
-
-    intersection = 0  # Initialize intersection
-    num_samples = 10000  # Number of samples for Monte Carlo estimation
-
-    for _ in range(num_samples):
-        point = pred_box_3d.sample()  # Sample a point from the predicted box
-        if gt_box_3d.inside(point):
-            intersection += 1
-
-    intersection_volume = intersection / num_samples * pred_box_3d.volume
-    union_volume = pred_box_3d.volume + gt_box_3d.volume - intersection_volume
-    iou = intersection_volume / union_volume if union_volume != 0 else 0
-
-    #print("Computed IoU:", iou)
-    return iou
+def compute_volume_3d(box):
+    # Assuming box['dimension_3d'] contains [width, height, depth]
+    volume = box['dimension_3d'][0] * box['dimension_3d'][1] * box['dimension_3d'][2]
+    #print(f"Volume of Box: {volume} (Width: {box['dimension_3d'][0]}, Height: {box['dimension_3d'][1]}, Depth: {box['dimension_3d'][2]})")
+    return volume
 
 def compute_iou_3d(pred_box, gt_box):
-    pred_box_3d = Box.from_transformation(pred_box['orientation'], pred_box['location_3d'], pred_box['dimension_3d'])
-    gt_box_3d = Box.from_transformation(gt_box['orientation'], gt_box['location_3d'], gt_box['dimension_3d'])
-
-    num_samples = 1000  # Number of samples for Monte Carlo estimation
-    batch_size = 500    # Number of samples to process at a time
-
-    intersection = 0
-
-    for _ in range(0, num_samples, batch_size):
-        # Sample points in batches and convert to PyTorch tensors
-        points = torch.stack([torch.from_numpy(pred_box_3d.sample()).float() for _ in range(batch_size)])
-
-        # Check if these points are inside the gt_box_3d
-        inside_points = torch.tensor([gt_box_3d.inside(point.numpy()) for point in points])
-        intersection += inside_points.sum().item()
-
-    intersection_volume = intersection / num_samples * pred_box_3d.volume
-    union_volume = pred_box_3d.volume + gt_box_3d.volume - intersection_volume
-    iou = intersection_volume / union_volume if union_volume != 0 else 0
-
+    #print("Computing IoU between a predicted box and a ground truth box.")
+    intersection_volume = calculate_intersection_volume_3d(pred_box, gt_box)
+    pred_volume = compute_volume_3d(pred_box)
+    gt_volume = compute_volume_3d(gt_box)
+    union_volume = pred_volume + gt_volume - intersection_volume
+    iou = intersection_volume / union_volume if union_volume > 0 else 0
+    #print(f"Computed IoU: {iou} (Pred Volume: {pred_volume}, GT Volume: {gt_volume}, Union Volume: {union_volume})")
     return iou
 
-
-# Function to match predictions to ground truths and compute precision and recall
 def compute_precision_recall(predictions, ground_truths, iou_threshold):
+    #print(f"Computing precision and recall for IoU threshold: {iou_threshold}")
     tp, fp, fn = 0, 0, 0
-    #print("Computing precision and recall with IoU threshold:", iou_threshold)
-
     matched = set()
     for i, pred_box in enumerate(predictions):
-        best_iou = 0
-        best_gt_idx = -1
+        best_iou, best_gt_idx = 0, -1
+        #print(f"Processing prediction box {i}")
         for j, gt_box in enumerate(ground_truths):
-            iou = compute_iou_3d(pred_box, gt_box)
+            iou = compute_iou_3d(pred_box[0], gt_box[0])
+            #print(f"  IoU with GT box {j}: {iou}")
             if iou > best_iou:
-                best_iou = iou
-                best_gt_idx = j
-
-        #print(f"Prediction {i}: Best matching GT index: {best_gt_idx}, Best IoU: {best_iou}")
-
-        if best_iou > iou_threshold:
-            #print(f"  Prediction {i} is a match (IoU > {iou_threshold})")
-            if best_gt_idx not in matched:
-                tp += 1
-                matched.add(best_gt_idx)
-                #print(f"  Added as TP, total TP: {tp}")
-            else:
-                fp += 1
-                #print(f"  Added as FP (already matched GT), total FP: {fp}")
+                best_iou, best_gt_idx = iou, j
+        if best_iou > iou_threshold and best_gt_idx not in matched:
+            #print(f"  True Positive: Prediction {i} matched with GT {best_gt_idx}")
+            tp += 1
+            matched.add(best_gt_idx)
         else:
+            #print(f"  False Positive: Prediction {i}")
             fp += 1
-            #print(f"  Added as FP (IoU <= {iou_threshold}), total FP: {fp}")
-
     fn = len(ground_truths) - len(matched)
-    #print(f"Total FN (unmatched GT): {fn}")
-
+    #print(f"  False Negatives: {fn}")
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-
-    #print("Computed precision:", precision)
-    #print("Computed recall:", recall)
-
+    #print(f"Precision: {precision}, Recall: {recall}")
     return precision, recall
 
+def compute_average_precision(precisions, recalls):
+    """
+    Compute average precision (AP) from arrays of precision and recall.
+    Assumes linear interpolation of precision.
+    """
+    # Ensure precisions and recalls are numpy arrays
+    precisions = np.array(precisions)
+    recalls = np.array(recalls)
 
-# Function to compute mAP
-def compute_map(predictions, ground_truths, iou_thresholds):
-    #print("Computing mAP for IoU thresholds:", iou_thresholds)
-    map_values_by_threshold = {}
+    # Sort by recall
+    sorted_indices = np.argsort(recalls)
+    sorted_recall = recalls[sorted_indices]
+    sorted_precision = precisions[sorted_indices]
 
+    # Compute AP as the area under the precision-recall curve
+    ap = 0.0
+    for i in range(1, len(sorted_recall)):
+        delta_recall = sorted_recall[i] - sorted_recall[i - 1]
+        ap += delta_recall * (sorted_precision[i] + sorted_precision[i - 1]) / 2
+
+    return ap
+
+
+def compute_map(dataset_predictions, dataset_ground_truths, iou_thresholds):
+    map_values_by_threshold = 0.0
+    all_precisions = []
+    all_recalls = []
+
+    organized_predictions = [[pred] for pred in dataset_predictions]
+    organized_ground_truths = [[gt] for gt in dataset_ground_truths]
+    
     for iou_threshold in iou_thresholds:
-        precision, recall = compute_precision_recall(predictions, ground_truths, iou_threshold)
-        
-        # Since precision and recall are now computed for the entire set,
-        # they don't need to be sorted and averaged separately for each threshold
-        # Instead, we directly use the precision and recall values computed
-        ap = precision * recall  # This is a simplified AP calculation for demonstration
+        #print("organized_predictions", organized_predictions)
+        #print("organized_ground_truths", organized_ground_truths)
+        precision, recall = compute_precision_recall(organized_predictions, organized_ground_truths, iou_threshold)
+        print(f"iou_threshold: {iou_threshold}, precision: {precision:.3f}, recall: {recall:.3f}")
+        all_precisions.append(precision)
+        all_recalls.append(recall)
 
-        map_values_by_threshold[iou_threshold] = ap
-
-    #print("Computed mAP by thresholds:", map_values_by_threshold)
+    map_values_by_threshold = compute_average_precision(all_precisions, all_recalls)
     return map_values_by_threshold
-
-
-def nms_3d(dimensions_3d, locations_3d, orientations, scores, iou_threshold):
-    keep = []
-    idxs = scores.argsort(descending=True)  # Sort the scores
-
-    while len(idxs) > 0:
-        current_idx = idxs[0]
-        current_dimensions = dimensions_3d[current_idx]
-        current_location = locations_3d[current_idx]
-        current_orientation = orientations[current_idx]
-
-        keep.append(current_idx)
-        if len(idxs) == 1:
-            break
-
-        rest_dimensions = dimensions_3d[idxs[1:]]
-        rest_locations = locations_3d[idxs[1:]]
-        rest_orientations = orientations[idxs[1:]]
-
-        ious = torch.tensor([
-            compute_iou_3d({'dimension_3d': current_dimensions, 'location_3d': current_location, 'orientation': current_orientation},
-                           {'dimension_3d': rest_dimensions[i], 'location_3d': rest_locations[i], 'orientation': rest_orientations[i]})
-            for i in range(len(rest_dimensions))
-        ])
-
-        idxs = idxs[1:][ious < iou_threshold]
-
-    return torch.tensor(keep)
 
 # Example Usage
 # Suppose you have lists of predicted boxes and ground truth boxes:
