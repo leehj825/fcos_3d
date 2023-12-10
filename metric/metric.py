@@ -53,6 +53,25 @@ def compute_iou_3d(pred_box, gt_box):
     #print(f"Computed IoU: {iou} (Pred Volume: {pred_volume}, GT Volume: {gt_volume}, Union Volume: {union_volume})")
     return iou
 
+def compute_let_iou_3d(pred_box, gt_box, longitudinal_tolerance):
+    # Assume the longitudinal_tolerance is defined along the Z-axis
+    pred_box_shifted = shift_pred_box(pred_box, gt_box, longitudinal_tolerance)
+    intersection_volume = calculate_intersection_volume_3d(pred_box_shifted, gt_box)
+    pred_volume = compute_volume_3d(pred_box)
+    gt_volume = compute_volume_3d(gt_box)
+    union_volume = pred_volume + gt_volume - intersection_volume
+    let_iou = intersection_volume / union_volume if union_volume > 0 else 0
+    #print(f"Computed LET IoU: {let_iou} (Pred Volume: {pred_volume}, GT Volume: {gt_volume}, Union Volume: {union_volume})")
+    return let_iou
+
+def shift_pred_box(pred_box, gt_box, longitudinal_tolerance):
+    # Shift the predicted box along the Z-axis to align with the ground truth box within a tolerance limit
+    pred_box_shifted = pred_box.copy()
+    z_shift = min(max(gt_box['location_3d'][2] - pred_box['location_3d'][2], -longitudinal_tolerance), longitudinal_tolerance)
+    pred_box_shifted['location_3d'][2] += z_shift
+    return pred_box_shifted
+
+
 def compute_precision_recall(predictions, ground_truths, iou_threshold):
     #print(f"Computing precision and recall for IoU threshold: {iou_threshold}")
     tp, fp, fn = 0, 0, 0
@@ -62,6 +81,7 @@ def compute_precision_recall(predictions, ground_truths, iou_threshold):
         #print(f"Processing prediction box {i}")
         for j, gt_box in enumerate(ground_truths):
             iou = compute_iou_3d(pred_box[0], gt_box[0])
+            #iou = compute_let_iou_3d(pred_box[0], gt_box[0], 5.0)
             #print(f"  IoU with GT box {j}: {iou}")
             if iou > best_iou:
                 best_iou, best_gt_idx = iou, j

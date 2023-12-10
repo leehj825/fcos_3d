@@ -23,6 +23,8 @@ from torchvision.models.resnet import ResNet101_Weights
 # Util functions from torchvision
 from torchvision.models.detection import _utils as det_utils
 
+import metric.metric as metric
+
 __all__ = [
     "FCOS",
     "fcos3d",

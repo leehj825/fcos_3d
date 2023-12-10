@@ -363,11 +363,13 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 
                 # Print each loss component for the current batch
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
+                
+                # Print every 5 batches
+                if (batch_idx + 1) % 5 == 0:
+                    for loss_name, loss_value in loss_dict.items():
+                        loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 
-                for loss_name, loss_value in loss_dict.items():
-                    loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
-
-                print(loss_info.strip(", "))
+                    print(loss_info.strip(", "))
 
                 losses = sum(loss for loss in loss_dict.values())
                 loss_value = losses.item()
@@ -382,7 +384,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
             scheduler.step(loss_value)
 
             # Save checkpoint
-            if (epoch+1) % 1 == 0:
+            if (epoch+1) % 10 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
