@@ -24,10 +24,10 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
-default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
-default_kitti_label_folder = 'data/kitti_200/training/label_2/'
-default_kitti_calib_folder = 'data/kitti_200/training/calib/'
+default_kitti_data_path = "data/kitti_50/"
+default_kitti_image_path = 'data/kitti_50/training/image_2/000025.png'
+default_kitti_label_folder = 'data/kitti_50/training/label_2/'
+default_kitti_calib_folder = 'data/kitti_50/training/calib/'
 
 # Default paths and parameters for Waymo dataset
 default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location

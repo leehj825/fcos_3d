@@ -43,15 +43,10 @@ CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
 default_kitti_data_path = "data/kitti_200/"
-default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
-default_kitti_label_folder = 'data/kitti_200/training/label_2/'
-default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
 default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = 'data/waymo_single/training/label_0/'
-default_waymo_calib_folder = 'data/waymo_single/training/calib/'
+
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
@@ -61,7 +56,7 @@ default_load_checkpoint = 'save_state_kitti_calib_92.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_calib_92_test'
+default_output_image_path = 'output_kitti_calib_92_infer'
 #default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
@@ -74,15 +69,14 @@ if not os.path.exists(default_output_image_path):
 device = "cpu"
 print(device)
 
-
 def custom_collate(batch, dataset_name):
-    # Check each data entry in the batch
+    # Process images and handle cases where targets or calib_data may not be present
+    images = []
+    image_paths = []
     for data in batch:
-        images, targets, calib_data, _ = data
-        # If any of images, targets, or calib_data is None, return None for the entire batch
-        if images is None or targets is None or calib_data is None:
-            return None
-    
+        images.append(data[0])  # Always add the image
+        image_paths.append(data[-1])  # The image path is assumed to be the last element
+
     # Define resize transformations for KITTI and Waymo datasets
     resize_transform_kitti = transforms.Compose([
         transforms.Resize((375, 1242)),
@@ -92,8 +86,6 @@ def custom_collate(batch, dataset_name):
         transforms.Resize((1280, 1920)),  # Example resize for Waymo; adjust as needed
         transforms.ToTensor()
     ])
-
-    images, targets, calib_data, image_path = zip(*batch)
     
     # Apply the appropriate resize transformation based on the dataset
     if dataset_name == 'kitti':
@@ -105,10 +97,8 @@ def custom_collate(batch, dataset_name):
 
     images = torch.stack(images, 0).to(device)
 
-    # Calibration data handling might differ between datasets
-    # ...
+    return images, None, None, image_paths
 
-    return images, targets, calib_data, image_path
 
 def preprocess_image(img_path, dataset_name):
     image = Image.open(img_path)
@@ -265,65 +255,10 @@ def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
 
 # Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
 
-def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, locations, orientation, calibs_1, calibs_2, image_path, output_image_path):
-    
-    if dataset_name == 'kitti':
-        #default_calib_folder = default_kitti_calib_folder
-        default_label_folder = default_kitti_label_folder
-    elif dataset_name == 'waymo':
-        #default_calib_folder = default_waymo_calib_folder
-        default_label_folder = default_waymo_label_folder
-    
-    # Open the original image
-    image_gt = Image.open(image_path)
-    draw_gt = ImageDraw.Draw(image_gt)
+def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, orientation, calibs_1, calibs_2, image_path, output_image_path):
 
     image_pred = Image.open(image_path)
     draw_pred = ImageDraw.Draw(image_pred)
-
-    # Get label file path
-    #calib_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
-    #calib_path = os.path.join(default_calib_folder, calib_file)
-
-    # Get label file path
-    label_file = os.path.splitext(os.path.basename(image_path))[0] + '.txt'
-    label_path = os.path.join(default_label_folder, label_file)
-
-
-    # Read calibration data
-    #calib_data = {}
-    #with open(calib_path, 'r') as calib_file:
-    #    for line in calib_file:
-    #        if ':' in line:  # Ensure line contains a colon
-    #            key, value = line.split(':', 1)
-    #            calib_data[key] = np.fromstring(value, sep=' ')
-
-    # Extract calibration matrix
-    #if dataset_name == 'kitti':
-    #    P = calib_data.get('P2').reshape(3, 4) if 'P2' in calib_data else None
-    #elif dataset_name == 'waymo':
-    #    P = calib_data.get('P0').reshape(3, 4) if 'P0' in calib_data else None
-    P = calib_data
-    #print("P before", P)
-    if P is None:
-        raise ValueError("P2 (kitti) or P0 (waymo) calibration matrix not found in calibration data.")
-
-    # Draw ground truth bounding boxes in yellow and 3D bounding boxes
-    with open(label_path, 'r') as f:
-        for line in f.readlines():
-            parts = line.strip().split()
-            bbox = [float(parts[i]) for i in range(4, 8)]  # 2D bounding box
-
-            dimension_3d = [float(parts[i]) for i in range(8, 11)]  # 3D dimensions
-            location_3d = [float(parts[i]) for i in range(11, 14)]  # 3D location
-            rotation_y = float(parts[14])  # Orientation
-
-            corners_3d = create_3d_bbox(dimension_3d, location_3d, rotation_y)
-            corners_2d = project_to_image(corners_3d.T, P)
-
-            #draw.rectangle(bbox, outline="yellow")
-            if bbox[2] > bbox[0] and bbox[3] > bbox[1]:  # Ensures width and height are positive
-                draw_3d_box(draw_gt, corners_2d)
 
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
@@ -340,12 +275,6 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             P_pred = np.array([calib_1_np, calib_2_np, [0.0, 0.0, 1.0, 0.0]])
             #print("P_pred", P_pred)
 
-            # Draw 3D box
-            #corners_3d = create_3d_bbox(dimension, location, orientation)
-
-            #corners_2d = project_to_image(corners_3d.T, P_pred)
-            #print("corners_2d", corners_2d)
-            #draw_3d_box(draw_gt, corners_2d, color="blue")
 
             corners_3d = create_3d_bbox_2d(dimension, box, location[2], orientation, P_pred)
             #print("box", box)
@@ -359,16 +288,15 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     #image.save(output_image_path)
 
     # Combine the two images (stack them vertically)
-    combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
+    combined_image = Image.new('RGB', (image_pred.width, image_pred.height * 2))
     #combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
-    combined_image.paste(image_gt, (0, 0))
-    combined_image.paste(image_pred, (0, image_gt.height))
+    combined_image.paste(image_pred, (0, 0))
 
     # Save the combined image
     combined_image.save(output_image_path)
 
 
-def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
+def main(mode='inference', dataset_name='waymo', load=None):
     # Main function to handle training and inference
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -390,26 +318,17 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
     # Load the appropriate dataset
     if dataset_name == 'kitti':
-        dataset = kitti.Kitti(root=default_kitti_data_path, train=True)
+        dataset = kitti.Kitti(root=default_kitti_data_path, train=False)
     elif dataset_name == 'waymo':
-        dataset = waymo.Waymo(root=default_waymo_data_path, train=True)  # Ensure this is correctly implemented
+        dataset = waymo.Waymo(root=default_waymo_data_path, train=False)  # Ensure this is correctly implemented
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
     
 
     # Define a data loader
-    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=lambda batch: custom_collate(batch, dataset_name))
     #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
-    #num_epochs = 500
-    #start_epoch = 0
-
-    # Load model checkpoint if provided
-    #if load:
-    #    checkpoint = torch.load(load)
-    #    start_epoch = checkpoint['epoch']
-    #    model.load_state_dict(checkpoint['model_state_dict'])
-    #    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     if load:
         # Loading checkpoint for resuming training
@@ -419,14 +338,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             print(f"Loading checkpoint: {load}")
             checkpoint = torch.load(load)
             model.load_state_dict(checkpoint['model_state_dict'])
-            start_epoch = checkpoint['epoch']
-
-            # If optimizer and scheduler states were saved, load them
-            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-            if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         except RuntimeError as e:
             print(f"Error loading checkpoint: {e}")
 
@@ -434,14 +345,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             try:
                 checkpoint = torch.load(load, map_location=torch.device('cpu'))
                 model.load_state_dict(checkpoint['model_state_dict'])
-                start_epoch = checkpoint['epoch']
-
-                # If optimizer and scheduler states were saved, load them
-                if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             except RuntimeError as e:
                 print(f"Error loading checkpoint with map_location: {e}")
 
@@ -450,14 +353,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 try:
                     checkpoint = torch.load(load, pickle_module=pickle, encoding='utf-8')
                     model.load_state_dict(checkpoint['model_state_dict'])
-                    start_epoch = checkpoint['epoch']
-
-                    # If optimizer and scheduler states were saved, load them
-                    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
                 except RuntimeError as e:
                     print(f"Error loading checkpoint with pickle_module: {e}")
                     # If this fails, the file might be corrupted or not a valid checkpoint
@@ -469,9 +364,15 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
         processed_images = 0
         iou_thresholds = [0.0, 0.1, 0.2, 0.3, 0.4]  # Define the IoU thresholds you want to use
 
-        for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):
+        for batch_idx, batch_data in enumerate(data_loader):
+
             if num_images and processed_images >= num_images:
                 break  # Stop if we have processed the desired number of images
+
+            if batch_data is None:
+                continue  # Skip this iteration if batch_data is None
+
+            images, _, _, image_paths = batch_data
 
             images = images.to(device)
 
@@ -488,58 +389,7 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 #print(detections)
                 original_image_path = image_paths[0]
-                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, locations, rotations, calib_1, calib_2, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
-
-                # Convert detections to the required format
-                for i in range(len(boxes)):
-                    box_2d_center_x = (boxes[i][0] + boxes[i][2]) / 2
-                    box_2d_center_y = (boxes[i][1] + boxes[i][3]) / 2
-
-                    
-                    calib_1_np = calib_1[i].numpy() if isinstance(calib_1[i], torch.Tensor) else calib_1[i]
-                    calib_2_np = calib_2[i].numpy() if isinstance(calib_2[i], torch.Tensor) else calib_2[i]
-                    P_pred = np.array([calib_1_np, calib_2_np, [0.0, 0.0, 1.0, 0.0]])
-                    #print("P_pred i", i,  P_pred)
-                    location_3d = back_project_to_3d(box_2d_center_x, box_2d_center_y, locations[i][-1], P_pred)  # Use z component from locations[i]
-                    #print("location_3d", location_3d)
-                    # Convert to list and ensure double precision
-                    location_3d = [float(coord) for coord in location_3d.tolist()] if isinstance(location_3d, (torch.Tensor, np.ndarray)) else location_3d
-                    dimension_3d = [float(dim) for dim in dimensions[i].tolist()] if isinstance(dimensions[i], (torch.Tensor, np.ndarray)) else dimensions[i]
-                    orientation = float(rotations[i].item()) if isinstance(rotations[i], torch.Tensor) else rotations[i]
-
-                    pred_box = {
-                        'location_3d': location_3d,
-                        'dimension_3d': dimension_3d,
-                        'orientation': orientation
-                    }
-                    #print("pred_box", i , pred_box)
-                    single_image_predictions.append(pred_box)
-
-                # Extract ground truth data for single image
-                image_targets = targets[idx]
-                for target in image_targets:
-                    if target["type"] in CLASS_MAPPING:
-                        if target["bbox"][2] > target["bbox"][0] and target["bbox"][3] > target["bbox"][1]:  # Ensures width and height are positive
-                            #print("target['location']", target['location'])
-                            gt_box = {
-                                'location_3d': target['location'],
-                                'dimension_3d': target['dimensions'],
-                                'orientation': target['rotation_y']
-                            }
-                            single_image_ground_truths.append(gt_box)
-
-                # Compute mAP for single image
-                #map_value = metric.compute_map(single_image_predictions, single_image_ground_truths, iou_thresholds)
-                #print(f"Image: {image_path}, mAP: {map_value}")
-                #print("single_image_predictions", single_image_predictions)
-                #print("single_image_ground_truths", single_image_ground_truths)
-
-                # Compute mAP for single image
-                map_values_by_threshold = metric.compute_map(single_image_predictions, single_image_ground_truths, iou_thresholds)
-
-                # Print mAP for each threshold
-                print(f"Image: {image_path}")
-                print(f"  mAP: {map_values_by_threshold}")
+                save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, rotations, calib_1, calib_2, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
 
                 processed_images += 1
@@ -551,7 +401,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')
     parser.add_argument('--mode', type=str, default='inference', choices=['train', 'inference'], help='Mode to run the script in')
     parser.add_argument('--dataset', type=str, default='waymo', choices=['kitti', 'waymo'], help='Dataset to use')
-    parser.add_argument('--image_path', default=default_kitti_image_path, type=str, help='Path to the image for inference mode')
     parser.add_argument('--load', default=default_load_checkpoint, type=str, help='Path to the pretrained model file')
     args = parser.parse_args()
-    main(mode=args.mode, dataset_name=args.dataset, image_path=args.image_path, load=args.load)
+    main(mode=args.mode, dataset_name=args.dataset, load=args.load)

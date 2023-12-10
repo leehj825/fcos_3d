@@ -104,26 +104,31 @@ class Waymo(VisionDataset):
             target is a list of dictionaries with various keys. If label or calibration file is missing, returns None.
         """
         image_path = self.images[index]  # Get the path of the image
+        if self.train:
+            # Check if label file exists
+            label_file = self.targets[index]
+            if not os.path.exists(label_file):
+                print(f"Label file missing: {label_file}")
+                return None, None, None, image_path
 
-        # Check if label file exists
-        label_file = self.targets[index]
-        if not os.path.exists(label_file):
-            print(f"Label file missing: {label_file}")
-            return None, None, None, image_path
-
-        # Check if calibration file exists (if necessary)
-        calib_file = self.calibrations[index]
-        if not os.path.exists(calib_file):
-            print(f"Calibration file missing: {calib_file}")
-            return None, None, None, image_path
+            # Check if calibration file exists (if necessary)
+            calib_file = self.calibrations[index]
+            if not os.path.exists(calib_file):
+                print(f"Calibration file missing: {calib_file}")
+                return None, None, None, image_path
 
         image = Image.open(image_path)
-        target = self._parse_target(index)
-        calib_data = self._parse_calibration(index)
+
+        if self.train:
+            target = self._parse_target(index)
+            calib_data = self._parse_calibration(index)
 
         if self.transforms:
             image, target = self.transforms(image, target)
 
+        if not self.train:
+            return image, None, None, image_path
+            
         return image, target, calib_data, image_path
 
     def _parse_calibration(self, index: int):

@@ -355,7 +355,10 @@ class FCOSRegressionHead(nn.Module):
         all_calib_2 = []
 
         for features in x:
+            
+            #print(f"features shape: {features.shape}")
             bbox_feature = self.conv(features)
+            #print(f"bbox_feature shape: {bbox_feature.shape}\n")
             bbox_regression = nn.functional.relu(self.bbox_reg(bbox_feature))
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
 
@@ -366,6 +369,17 @@ class FCOSRegressionHead(nn.Module):
             location_3d = self.location_3d_head(bbox_feature)
             calib_1 = self.calib_1_head(bbox_feature)
             calib_2 = self.calib_2_head(bbox_feature)
+
+
+            # Print shapes before processing
+            #print(f"Before")
+            #print(f"bbox_regression shape: {bbox_regression.shape}")
+            #print(f"bbox_ctrness shape: {bbox_ctrness.shape}")
+            #print(f"dimensions_3d shape: {dimensions_3d.shape}")
+            #print(f"orientation shape: {orientation.shape}")
+            #print(f"location_3d shape: {location_3d.shape}")
+            #print(f"calib_1 shape: {calib_1.shape}")
+            #print(f"calib_2 shape: {calib_2.shape}")
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -409,6 +423,26 @@ class FCOSRegressionHead(nn.Module):
             calib_2 = calib_2.permute(0, 3, 4, 1, 2)
             calib_2 = calib_2.reshape(N, -1, 4)
             all_calib_2.append(calib_2)
+
+
+            # Print shapes before processing
+            #print(f"After")
+            #print(f"bbox_regression shape: {bbox_regression.shape}")
+            #print(f"bbox_ctrness shape: {bbox_ctrness.shape}")
+            #print(f"dimensions_3d shape: {dimensions_3d.shape}")
+            #print(f"orientation shape: {orientation.shape}")
+            #print(f"location_3d shape: {location_3d.shape}")
+            #print(f"calib_1 shape: {calib_1.shape}")
+            #print(f"calib_2 shape: {calib_2.shape}")
+
+        # Print shapes of concatenated tensors
+        #print(f"Concatenated bbox_regression shape: {torch.cat(all_bbox_regression, dim=1).shape}")
+        #print(f"Concatenated bbox_ctrness shape: {torch.cat(all_bbox_ctrness, dim=1).shape}")
+        #print(f"Concatenated dimensions_3d shape: {torch.cat(all_dimensions_3d, dim=1).shape}")
+        #print(f"Concatenated orientation shape: {torch.cat(all_orientation, dim=1).shape}")
+        #print(f"Concatenated location_3d shape: {torch.cat(all_location_3d, dim=1).shape}")
+        #print(f"Concatenated calib_1 shape: {torch.cat(all_calib_1, dim=1).shape}")
+        #print(f"Concatenated calib_2 shape: {torch.cat(all_calib_2, dim=1).shape}")
 
         return (
             torch.cat(all_bbox_regression, dim=1),
