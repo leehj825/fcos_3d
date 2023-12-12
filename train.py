@@ -24,7 +24,7 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
 default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
@@ -36,9 +36,9 @@ default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
-default_learning_rate = 0.001
-#default_load_checkpoint = 'save_state_4.bin'
-default_load_checkpoint = None
+default_learning_rate = 0.00001
+default_load_checkpoint = 'save_state_kitti_80.bin'
+#default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -324,8 +324,9 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     boxes = []  # 2D bounding boxes
                     labels = []    # Object labels
                     dimensions_3d = []  # 3D bounding box dimensions (height, width, length)
-                    locations_3d = []  # 3D bounding box center location (x, y, z)
                     orientations_y = []  # Rotation around the Y-axis
+                    offset = []  # 3D bounding box center location (x, y, z)
+                    depth = []  # 3D bounding box center location (x, y, z)
 
                     for target in image_targets:
                         if target["type"] in CLASS_MAPPING:
@@ -338,8 +339,13 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 
                                 # Parsing 3D bounding box information
                                 dimensions_3d.append(target["dimensions"])  # [height, width, length]
-                                locations_3d.append(target["location"])     # [x, y, z]
+                                #locations_3d.append(target["location"])     # [x, y, z]
                                 orientations_y.append(target["rotation_y"]) # rotation y
+                                
+                                location_3d = np.array([target["location"]])  # Convert to numpy array, add extra dimension if needed
+                                projected_location_2d = project_to_image(location_3d, calib_data[0])  # Apply projection
+                                offset.append(projected_location_2d)
+                                depth.append(target["location"][2])
 
                     # Only proceed if there are valid targets
                     if boxes:
@@ -347,8 +353,9 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                             'boxes': torch.tensor(boxes, dtype=torch.float32).to(device).reshape(-1, 4),
                             'labels': torch.tensor(labels, dtype=torch.int64).to(device),
                             'dimensions_3d': torch.tensor(dimensions_3d, dtype=torch.float32).to(device),
-                            'locations_3d': torch.tensor(locations_3d, dtype=torch.float32).to(device),
-                            'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device)
+                            'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device),
+                            'keypoint': torch.tensor(offset, dtype=torch.float32).to(device),
+                            'depth': torch.tensor(depth, dtype=torch.float32).to(device),
                         }
                         target_list.append(target_dict)
 
@@ -365,7 +372,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
                 
                 # Print every 5 batches
-                if (batch_idx + 1) % 5 == 0:
+                if (batch_idx + 1) % 1 == 0:
                     for loss_name, loss_value in loss_dict.items():
                         loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 

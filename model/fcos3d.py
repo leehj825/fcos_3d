@@ -52,7 +52,27 @@ class FCOSHead(nn.Module):
         self.box_coder = det_utils.BoxLinearCoder(normalize_by_size=True)
         self.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes, num_convs)
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
+    
+    def encode_offsets(self, gt_centers, anchors):
+        """
+        Encode ground truth centers as offsets relative to anchors.
 
+        Args:
+            gt_centers (Tensor[N, 2]): Ground truth centers in the format (center_x, center_y).
+            anchors (Tensor[N, 4]): Anchors in the format (x1, y1, x2, y2).
+
+        Returns:
+            Tensor[N, 2]: Encoded offsets.
+        """
+        anchor_centers = (anchors[:, 2:] + anchors[:, :2]) / 2  # Get anchor centers
+        anchor_sizes = anchors[:, 2:] - anchors[:, :2]  # Get anchor sizes (width, height)
+
+        # Encoding: (gt_center - anchor_center) / anchor_size
+        encoded_offsets = (gt_centers - anchor_centers) / anchor_sizes
+
+        return encoded_offsets
+
+    
     def compute_loss(
         self,
         targets: List[Dict[str, Tensor]],
@@ -67,13 +87,15 @@ class FCOSHead(nn.Module):
 
         dimensions_3d = head_outputs["dimensions_3d"]  # [N, HWA, 3]
         orientation = head_outputs["orientation"]  # [N, HWA, 1]
-        location_3d = head_outputs["location_3d"]  # [N, HWA, 3]
+        offset = head_outputs["keypoint"] # [N, HWA, 2]
+        depth = head_outputs["depth"]  # [N, HWA, 1]
 
         all_gt_classes_targets = []
         all_gt_boxes_targets = []
         all_gt_dimensions_targets = []  # For 3D dimensions
         all_gt_orientation_targets = [] # For orientation
-        all_gt_location_targets = []    # For location
+        all_gt_offset_targets = []    # For location
+        all_gt_depth_targets = []    # For location
 
         for targets_per_image, matched_idxs_per_image in zip(targets, matched_idxs):
             if len(targets_per_image["labels"]) == 0:
@@ -81,33 +103,38 @@ class FCOSHead(nn.Module):
                 gt_boxes_targets = targets_per_image["boxes"].new_zeros((len(matched_idxs_per_image), 4))
                 gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
                 gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
-                gt_location_targets = targets_per_image["locations_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D location
+                gt_offset_targets = targets_per_image["keypoint"].new_zeros((len(matched_idxs_per_image), 2))  # Assuming 3D location
+                gt_depth_targets = targets_per_image["depth"].new_zeros((len(matched_idxs_per_image), 1))
             else:
                 gt_classes_targets = targets_per_image["labels"][matched_idxs_per_image.clip(min=0)]
                 gt_boxes_targets = targets_per_image["boxes"][matched_idxs_per_image.clip(min=0)]
                 gt_dimensions_targets = targets_per_image["dimensions_3d"][matched_idxs_per_image.clip(min=0)]
                 gt_orientation_targets = targets_per_image["orientations_y"][matched_idxs_per_image.clip(min=0)]
-                gt_location_targets = targets_per_image["locations_3d"][matched_idxs_per_image.clip(min=0)]
+                gt_offset_targets = targets_per_image["keypoint"][matched_idxs_per_image.clip(min=0)]
+                gt_depth_targets = targets_per_image["depth"][matched_idxs_per_image.clip(min=0)]
 
             gt_classes_targets[matched_idxs_per_image < 0] = -1  # background
             all_gt_classes_targets.append(gt_classes_targets)
             all_gt_boxes_targets.append(gt_boxes_targets)
             all_gt_dimensions_targets.append(gt_dimensions_targets)
             all_gt_orientation_targets.append(gt_orientation_targets)
-            all_gt_location_targets.append(gt_location_targets)
+            all_gt_offset_targets.append(gt_offset_targets)
+            all_gt_depth_targets.append(gt_depth_targets)
 
         # List[Tensor] to Tensor conversion
-        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_location_targets, anchors = (
+        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_offset_targets, all_gt_depth_targets, anchors = (
             torch.stack(all_gt_boxes_targets),
             torch.stack(all_gt_classes_targets),
             torch.stack(all_gt_dimensions_targets),
             torch.stack(all_gt_orientation_targets),
-            torch.stack(all_gt_location_targets),
+            torch.stack(all_gt_offset_targets),
+            torch.stack(all_gt_depth_targets),
             torch.stack(anchors),
         )
 
         #print("all_gt_boxes_targets.shape", all_gt_boxes_targets.shape)
         #print("all_gt_classes_targets.shape", all_gt_classes_targets.shape)
+        #print("anchors.shape", anchors.shape)
 
         # compute foregroud
         foregroud_mask = all_gt_classes_targets >= 0
@@ -127,31 +154,25 @@ class FCOSHead(nn.Module):
             all_gt_boxes_targets[foregroud_mask],
             reduction="sum",
         )
-
         # ctrness loss
         bbox_reg_targets = self.box_coder.encode(anchors, all_gt_boxes_targets)
-
         if len(bbox_reg_targets) == 0:
             gt_ctrness_targets = bbox_reg_targets.new_zeros(bbox_reg_targets.size()[:-1])
         else:
             left_right = bbox_reg_targets[:, :, [0, 2]]
             top_bottom = bbox_reg_targets[:, :, [1, 3]]
             epsilon = 1e-6  # A small constant to avoid division by zero
-
             # Add debugging print to check the values of left_right and top_bottom
             #print("Debug - left_right:", left_right.shape)
             #print("Debug - top_bottom:", top_bottom.shape)
-
             # Ensure non-negative values before sqrt operation
             left_right_min = left_right.min(dim=-1)[0].clamp(min=0)
             left_right_max = left_right.max(dim=-1)[0].clamp(min=epsilon)
             top_bottom_min = top_bottom.min(dim=-1)[0].clamp(min=0)
             top_bottom_max = top_bottom.max(dim=-1)[0].clamp(min=epsilon)
-
             gt_ctrness_targets = torch.sqrt(
                 (left_right_min / left_right_max) * (top_bottom_min / top_bottom_max)
             )
-
             # Add debugging print to check the values of gt_ctrness_targets
             #print("Debug - gt_ctrness_targets shape:", gt_ctrness_targets.shape)
 
@@ -166,13 +187,38 @@ class FCOSHead(nn.Module):
 
         pred_dimensions_3d = dimensions_3d.squeeze(dim=2)
         pred_orientation = orientation.squeeze(dim=2)
-        pred_location_3d = location_3d.squeeze(dim=2)
+        pred_offsets = offset.squeeze(dim=2)
 
-        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
-        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
-        #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
-        loss_location_3d = nn.functional.smooth_l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")/3
+        loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
 
+
+        # Encode ground truth offsets relative to anchors
+        encoded_gt_offsets = self.encode_offsets(all_gt_offset_targets[foregroud_mask].squeeze(1), anchors[foregroud_mask])
+
+        #print("pred_offsets[foregroud_mask].shape", pred_offsets[foregroud_mask].shape)
+        #print("gt_offset_targets.shape", encoded_gt_offsets.shape)
+        #print("anchors[foregroud_mask].shape", anchors[foregroud_mask].shape)
+
+        # Compute the loss between encoded ground truth offsets and predicted offsets
+        loss_offset = nn.functional.smooth_l1_loss(pred_offsets[foregroud_mask], encoded_gt_offsets, reduction="sum")
+
+        # Squeeze the extra dimension from all_gt_offset_targets
+        #gt_offset_targets = all_gt_offset_targets[foregroud_mask].squeeze(1)
+
+        # Compute the offset loss for the predicted offsets
+        #loss_offset = nn.functional.smooth_l1_loss(pred_offsets[foregroud_mask], gt_offset_targets, reduction="mean")
+
+
+        # Assuming you have a minimum depth to avoid taking log of zero
+        min_depth = 1e-6
+
+        # Apply logarithmic transformation to depth values
+        log_gt_depth = torch.log(all_gt_depth_targets[foregroud_mask].clamp(min=min_depth))
+        log_pred_depth = torch.log(depth[foregroud_mask].clamp(min=min_depth).squeeze(1))
+
+        # Compute the depth loss for the predicted depths
+        loss_depth = nn.functional.smooth_l1_loss(log_pred_depth, log_gt_depth, reduction="sum")
 
         return {
             "classification": loss_cls / max(1, num_foreground),
@@ -180,12 +226,14 @@ class FCOSHead(nn.Module):
             "bbox_ctrness": loss_bbox_ctrness / max(1, num_foreground),
             "dimensions_3d": loss_dimensions_3d / max(1, num_foreground),
             "orientation": loss_orientation / max(1, num_foreground),
-            "location_3d": loss_location_3d / max(1, num_foreground)
+            "keypoint": loss_offset / max(1, num_foreground),  # Include offset loss
+            "depth": loss_depth / max(1, num_foreground)  # Include depth loss
         }
 
     def forward(self, x: List[Tensor]) -> Dict[str, Tensor]:
         cls_logits = self.classification_head(x)
-        bbox_regression, bbox_ctrness, dimensions_3d, orientation, location_3d = self.regression_head(x)
+        #bbox_regression, bbox_ctrness, dimensions_3d, orientation, location_3d = self.regression_head(x)
+        bbox_regression, bbox_ctrness, dimensions_3d, orientation, offset, depth = self.regression_head(x)
         #print("regression_head dimensions_3d", dimensions_3d)
         #print("regression_head bbox_regression", bbox_regression)
         return {
@@ -194,9 +242,9 @@ class FCOSHead(nn.Module):
             "bbox_ctrness": bbox_ctrness,
             "dimensions_3d": dimensions_3d,
             "orientation": orientation,
-            "location_3d": location_3d,
+            "keypoint": offset,
+            "depth": depth
         }
-
 
 class FCOSClassificationHead(nn.Module):
     """
@@ -299,8 +347,9 @@ class FCOSRegressionHead(nn.Module):
         self.bbox_ctrness = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
         self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
         self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        self.location_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.location_3d_head]:
+        self.offset_head = nn.Conv2d(in_channels, num_anchors * 2, kernel_size=3, stride=1, padding=1)
+        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+        for layer in [self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.offset_head, self.depth_head]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
 
@@ -314,7 +363,8 @@ class FCOSRegressionHead(nn.Module):
         all_bbox_ctrness = []
         all_dimensions_3d = []
         all_orientation = []
-        all_location_3d = []
+        all_offset = []
+        all_depth = []
 
         for features in x:
             bbox_feature = self.conv(features)
@@ -325,7 +375,9 @@ class FCOSRegressionHead(nn.Module):
             # Predictions for 3D dimensions, orientation, and location
             dimensions_3d = self.dimensions_3d_head(bbox_feature)
             orientation = self.orientation_head(bbox_feature)
-            location_3d = self.location_3d_head(bbox_feature)
+            #location_3d = self.location_3d_head(bbox_feature)
+            offset = self.offset_head(bbox_feature)
+            depth = self.depth_head(bbox_feature)
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -353,17 +405,24 @@ class FCOSRegressionHead(nn.Module):
             all_orientation.append(orientation)
 
             # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
-            location_3d = location_3d.view(N, -1, 3, H, W)
-            location_3d = location_3d.permute(0, 3, 4, 1, 2)
-            location_3d = location_3d.reshape(N, -1, 3)
-            all_location_3d.append(location_3d)
+            offset = offset.view(N, -1, 2, H, W)
+            offset = offset.permute(0, 3, 4, 1, 2)
+            offset = offset.reshape(N, -1, 2)
+            all_offset.append(offset)
+
+            # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
+            depth = depth.view(N, -1, 1, H, W)
+            depth = depth.permute(0, 3, 4, 1, 2)
+            depth = depth.reshape(N, -1, 1)
+            all_depth.append(depth)
 
         return (
             torch.cat(all_bbox_regression, dim=1),
             torch.cat(all_bbox_ctrness, dim=1),
             torch.cat(all_dimensions_3d, dim=1),
             torch.cat(all_orientation, dim=1),
-            torch.cat(all_location_3d, dim=1)
+            torch.cat(all_offset, dim=1),
+            torch.cat(all_depth, dim=1)
         )
 
 class FCOS(nn.Module):
@@ -470,7 +529,7 @@ class FCOS(nn.Module):
         anchor_generator: Optional[AnchorGenerator] = None,
         head: Optional[nn.Module] = None,
         center_sampling_radius: float = 1.5,
-        score_thresh: float = 0.5,
+        score_thresh: float = 0.3,
         nms_thresh: float = 0.3,
         detections_per_img: int = 100,
         topk_candidates: int = 1000,
@@ -581,23 +640,36 @@ class FCOS(nn.Module):
 
         return self.head.compute_loss(targets, head_outputs, anchors, matched_idxs)
 
+    def decode_offsets(self, encoded_offsets, anchors):
+        """
+        Decode encoded offsets back to absolute centers, relative to anchors.
+
+        Args:
+            encoded_offsets (Tensor[N, 2]): Encoded offsets relative to the anchors.
+            anchors (Tensor[N, 4]): Anchors in the format (x1, y1, x2, y2).
+
+        Returns:
+            Tensor[N, 2]: Decoded absolute centers.
+        """
+        anchor_centers = (anchors[:, 2:] + anchors[:, :2]) / 2  # Get anchor centers
+        anchor_sizes = anchors[:, 2:] - anchors[:, :2]  # Get anchor sizes (width, height)
+
+        # Decoding: anchor_center + (encoded_offset * anchor_size)
+        decoded_centers = anchor_centers + (encoded_offsets * anchor_sizes)
+
+        return decoded_centers
+
+
     def postprocess_detections(
     self, head_outputs: Dict[str, List[Tensor]], anchors: List[List[Tensor]], image_shapes: List[Tuple[int, int]]
 ) -> List[Dict[str, Tensor]]:
         class_logits = head_outputs["cls_logits"]
         box_regression = head_outputs["bbox_regression"]
         box_ctrness = head_outputs["bbox_ctrness"]
-
-        # Extract additional 3D outputs from head_outputs
         dimensions_3d = head_outputs["dimensions_3d"]  # List of Tensors
-
-        #print("head_output dimensions_3d", dimensions_3d)
-        locations_3d = head_outputs["location_3d"]  # List of Tensors
         orientation = head_outputs["orientation"]  # List of Tensors
-
-        #print("postprocess_detections dimensions_3d", dimensions_3d)
-        #print("postprocess_detections box_regression", box_regression)
-        #print("orientation", orientation)
+        offset = head_outputs["keypoint"]  # List of Tensors
+        depth = head_outputs["depth"]  # List of Tensors
 
         num_images = len(image_shapes)
         detections = [{} for _ in range(num_images)]  # Initialize detections for each image
@@ -612,18 +684,20 @@ class FCOS(nn.Module):
             anchors_per_image, image_shape = anchors[index], image_shapes[index]
 
             dimensions_3d_per_image = [dim[index] for dim in dimensions_3d] if dimensions_3d else None
-            locations_3d_per_image = [loc[index] for loc in locations_3d] if locations_3d else None
             orientation_per_image = [rot[index] for rot in orientation] if orientation else None
+            offset_per_image = [off[index] for off in offset] if offset else None
+            depth_per_image = [dep[index] for dep in depth] if depth else None
 
             image_boxes = []
             image_scores = []
             image_labels = []
             image_dimensions_3d = []
-            image_locations_3d = []
             image_orientation = []
+            image_offset = []
+            image_depth = []
 
-            for box_regression_per_level, logits_per_level, box_ctrness_per_level, anchors_per_level, dimensions_3d_per_level, locations_3d_per_level, orientation_per_level in zip(
-                box_regression_per_image, logits_per_image, box_ctrness_per_image, anchors_per_image, dimensions_3d_per_image, locations_3d_per_image, orientation_per_image
+            for box_regression_per_level, logits_per_level, box_ctrness_per_level, anchors_per_level, dimensions_3d_per_level, orientation_per_level, offset_per_level, depth_per_level in zip(
+                box_regression_per_image, logits_per_image, box_ctrness_per_image, anchors_per_image, dimensions_3d_per_image, orientation_per_image, offset_per_image, depth_per_image
             ):
                 num_classes = logits_per_level.shape[-1]
 
@@ -655,21 +729,30 @@ class FCOS(nn.Module):
 
                 # Decode 3D outputs for the current level
                 dimensions_3d_level = dimensions_3d_per_level[anchor_idxs]
-                locations_3d_level = locations_3d_per_level[anchor_idxs]
                 orientation_level = orientation_per_level[anchor_idxs]
-
+                offset_level = offset_per_level[anchor_idxs]
+                depth_level = depth_per_level[anchor_idxs]
+                print("offset_level", offset_level)
+                # Convert relative offsets to absolute centers
+                anchors_selected = anchors_per_level[anchor_idxs]
+                anchor_centers = (anchors_selected[:, 2:] + anchors_selected[:, :2]) / 2
+                #absolute_centers = anchor_centers + offset_level * (anchors_selected[:, 2:] - anchors_selected[:, :2])
+                absolute_centers = self.decode_offsets(offset_level, anchors_selected)
+                print("absolute_centers", absolute_centers)
                 # Append all outputs to the respective lists
                 image_dimensions_3d.append(dimensions_3d_level)
-                image_locations_3d.append(locations_3d_level)
+                image_offset.append(absolute_centers) 
                 image_orientation.append(orientation_level)
+                image_depth.append(depth_level)
 
             image_boxes = torch.cat(image_boxes, dim=0)
             image_scores = torch.cat(image_scores, dim=0)
             image_labels = torch.cat(image_labels, dim=0)
             # Concatenate all outputs for the current image
             image_dimensions_3d = torch.cat(image_dimensions_3d, dim=0)
-            image_locations_3d = torch.cat(image_locations_3d, dim=0)
             image_orientation = torch.cat(image_orientation, dim=0)
+            image_offset = torch.cat(image_offset, dim=0)
+            image_depth = torch.cat(image_depth, dim=0)
 
             # Filter based on NMS keep indices
             keep = box_ops.batched_nms(image_boxes, image_scores, image_labels, self.nms_thresh)
@@ -687,8 +770,9 @@ class FCOS(nn.Module):
             detections[index]["labels"] = image_labels[keep]
 
             detections[index]["dimensions_3d"] = image_dimensions_3d[keep]
-            detections[index]["locations_3d"] = image_locations_3d[keep]
             detections[index]["orientation"] = image_orientation[keep]
+            detections[index]["keypoint"] = image_offset[keep]
+            detections[index]["depth"] = image_depth[keep]
 
 
 

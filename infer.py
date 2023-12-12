@@ -42,23 +42,23 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/ddata/waymo_single/"  # Update this path as per your Waymo dataset location
 
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_calib_92.bin'
+default_load_checkpoint = 'save_state_kitti_70.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_calib_92_infer'
+default_output_image_path = 'output_kitti_70'
 #default_output_image_path = 'output_waymo_hpc_29'
-num_images = 5
+num_images = 20
 
 # Check if the directory exists
 if not os.path.exists(default_output_image_path):
@@ -134,13 +134,12 @@ def inference(model, image_path, dataset_name):
             scores = pred['scores']
             labels = pred['labels']
             dimensions = pred['dimensions_3d']
-            locations = pred['locations_3d']
             orientation = pred['orientation']
-            calib_1 = pred['calib_1']
-            calib_2 = pred['calib_2']
+            offset = pred['keypoint']
+            depth = pred['depth']
         else:
-            boxes, scores, labels, dimensions, locations, orientation, calib_1, calib_2 = [], [], [], [], [], []
-    return boxes, scores, labels, dimensions, locations, orientation, calib_1, calib_2
+            boxes, scores, labels, dimensions, orientation, offset, depth = [], [], [], [], [], [], []
+    return boxes, scores, labels, dimensions, orientation, offset, depth
 
 
 def project_to_image(pts_3d, P):
@@ -255,42 +254,49 @@ def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
 
 # Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
 
-def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, orientation, calibs_1, calibs_2, image_path, output_image_path):
+def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, orientation, offset, depth, image_path, output_image_path):
 
     image_pred = Image.open(image_path)
     draw_pred = ImageDraw.Draw(image_pred)
-
+    print("calib_data", calib_data)
+    P = calib_data
+    if P is None:
+        raise ValueError("P2 (kitti) or P0 (waymo) calibration matrix not found in calibration data.")
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
-    for box, score, label, dimension, location, orientation, calib_1, calib_2 in zip(boxes, scores, labels, dimensions, locations, orientation, calibs_1, calibs_2):
-        if score > 0.5:  # Threshold can be adjusted
+    for box, score, label, dimension, orientation, offset, depth in zip(boxes, scores, labels, dimensions, orientation, offset, depth):
+        if score > 0.4:  # Threshold can be adjusted
             #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
-            #print("calib_1", calib_1)
-            # Convert calib_1 and calib_2 to numpy arrays
-            calib_1_np = calib_1.numpy() if isinstance(calib_1, torch.Tensor) else calib_1
-            calib_2_np = calib_2.numpy() if isinstance(calib_2, torch.Tensor) else calib_2
-            P_pred = np.array([calib_1_np, calib_2_np, [0.0, 0.0, 1.0, 0.0]])
-            #print("P_pred", P_pred)
+            # Draw 3D box
+            #corners_3d = create_3d_bbox(dimension, location, orientation)
 
-
-            corners_3d = create_3d_bbox_2d(dimension, box, location[2], orientation, P_pred)
-            #print("box", box)
-            #print("corners_3d", corners_3d)
-            corners_2d = project_to_image(corners_3d.T, P_pred)
+            #corners_2d = project_to_image(corners_3d.T, P)
             #print("corners_2d", corners_2d)
+            #draw_3d_box(draw_gt, corners_2d, color="blue")
+            print("offset", offset)
+            print("depth", depth)
+            print("dimension", dimension)
+            print("orientation", orientation)
+
+            corners_3d = create_3d_bbox_2d(dimension, offset, depth, orientation, P)
+            #print("bbox", box)
+            print("corners_3d", corners_3d)
+            corners_2d = project_to_image(corners_3d.T, P)
+            print("corners_2d", corners_2d)
             #draw_3d_box(draw_pred, corners_2d, color="green")
-            draw_3d_box(draw_pred, corners_2d, color="green")
+            draw_3d_box(draw_gt, corners_2d, color="green")
     
     # Save the combined image
     #image.save(output_image_path)
 
     # Combine the two images (stack them vertically)
-    combined_image = Image.new('RGB', (image_pred.width, image_pred.height * 2))
-    #combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
-    combined_image.paste(image_pred, (0, 0))
+    #combined_image = Image.new('RGB', (image_gt.width, image_gt.height * 2))
+    combined_image = Image.new('RGB', (image_gt.width, image_gt.height))
+    combined_image.paste(image_gt, (0, 0))
+    #combined_image.paste(image_pred, (0, image_gt.height))
 
     # Save the combined image
     combined_image.save(output_image_path)
@@ -372,7 +378,7 @@ def main(mode='inference', dataset_name='waymo', load=None):
             if batch_data is None:
                 continue  # Skip this iteration if batch_data is None
 
-            images, _, _, image_paths = batch_data
+            images, _, calib_data, image_paths = batch_data
 
             images = images.to(device)
 
@@ -385,11 +391,11 @@ def main(mode='inference', dataset_name='waymo', load=None):
 
                 # Perform inference on single image
                 detections = inference(model, image_path, dataset_name)
-                boxes, scores, labels, dimensions, locations, rotations, calib_1, calib_2 = detections
+                boxes, scores, labels, dimensions, orientation, offset, depth = detections
 
-                #print(detections)
+                print("calib_data", calib_data)
                 original_image_path = image_paths[0]
-                save_combined_image(dataset_name, boxes, scores, labels, dimensions, locations, rotations, calib_1, calib_2, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
+                save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, orientation, offset, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
 
                 processed_images += 1
