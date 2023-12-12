@@ -57,11 +57,11 @@ default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/traini
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_70.bin'
+default_load_checkpoint = 'save_state_kitti_80.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_70'
+default_output_image_path = 'output_kitti_80'
 #default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 

@@ -109,13 +109,16 @@ class Kitti(VisionDataset):
 
         # Check if calibration file exists (if necessary)
         calib_file = self.calibrations[index]
+        if not os.path.exists(calib_file):
+            print(f"Calibration file missing: {calib_file}")
+            return None, None, None, image_path
 
         if self.train:
             # Check if label file exists
             label_file = self.targets[index]
             if not os.path.exists(label_file):
                 print(f"Label file missing: {label_file}")
-                return None, None, calib_data, image_path
+                return None, None, None, image_path
 
         image = Image.open(image_path)
         calib_data = self._parse_calibration(index)
