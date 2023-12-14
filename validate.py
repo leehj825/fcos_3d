@@ -43,26 +43,26 @@ CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
 default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/fcos_3d/ddata/kitti_200/training/image_2/000025.png'
+default_kitti_image_path = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
 default_kitti_calib_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/Users/hyejunlee/fcos_3d/ddata/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/calib/'
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/label_0/'
+default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_80.bin'
-#default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+#default_load_checkpoint = 'save_state_kitti_offset_hpc_40.bin'
+default_load_checkpoint = 'save_state_waymo_offset_hpc_10.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_80'
-#default_output_image_path = 'output_waymo_hpc_29'
+#default_output_image_path = 'output_kitti_offset_hpc_40'
+default_output_image_path = 'output_waymo_offset_hpc_10'
 num_images = 5
 
 # Check if the directory exists
@@ -249,8 +249,8 @@ def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
 
     # 3D bounding box corners
     x_corners = [l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2]
-    #y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
-    y_corners = [h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2]
+    y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+    #y_corners = [h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2]
     z_corners = [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2]
 
     # Rotate and translate 3D bounding box corners
