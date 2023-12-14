@@ -24,7 +24,7 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
 default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
@@ -37,8 +37,8 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
-#default_load_checkpoint = 'save_state_4.bin'
-default_load_checkpoint = None
+default_load_checkpoint = 'save_state_kitti_keypoint_10.bin'
+#default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -324,8 +324,9 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     boxes = []  # 2D bounding boxes
                     labels = []    # Object labels
                     dimensions_3d = []  # 3D bounding box dimensions (height, width, length)
-                    locations_3d = []  # 3D bounding box center location (x, y, z)
                     orientations_y = []  # Rotation around the Y-axis
+                    keypoint = []  # Key  points
+                    depth = []  # 3D bounding box center location (x, y, z)
 
                     for target in image_targets:
                         if target["type"] in CLASS_MAPPING:
@@ -338,8 +339,20 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 
                                 # Parsing 3D bounding box information
                                 dimensions_3d.append(target["dimensions"])  # [height, width, length]
-                                locations_3d.append(target["location"])     # [x, y, z]
                                 orientations_y.append(target["rotation_y"]) # rotation y
+                                
+                                corners_3d = create_3d_bbox(target["dimensions"], target["location"], target["rotation_y"])
+                                corners_2d = project_to_image(corners_3d.T, calib_data[0])
+                                corners_2d_flattened = corners_2d.flatten()
+
+                                # Append the flattened array to the keypoint list
+                                keypoint.append(corners_2d_flattened)
+                                depth.append(target["location"][2])
+                                #print("keypoint", keypoint)
+                                #print("dimensions_3d", dimensions_3d)
+
+                    keypoint_array = np.stack(keypoint) if keypoint else np.array([])
+                    keypoint_tensor = torch.tensor(keypoint_array, dtype=torch.float32).to(device)
 
                     # Only proceed if there are valid targets
                     if boxes:
@@ -347,8 +360,9 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                             'boxes': torch.tensor(boxes, dtype=torch.float32).to(device).reshape(-1, 4),
                             'labels': torch.tensor(labels, dtype=torch.int64).to(device),
                             'dimensions_3d': torch.tensor(dimensions_3d, dtype=torch.float32).to(device),
-                            'locations_3d': torch.tensor(locations_3d, dtype=torch.float32).to(device),
-                            'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device)
+                            'orientations_y': torch.tensor(orientations_y, dtype=torch.float32).to(device),
+                            'keypoint': keypoint_tensor,
+                            'depth': torch.tensor(depth, dtype=torch.float32).to(device),
                         }
                         target_list.append(target_dict)
 
@@ -389,7 +403,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()
-                }, f"./save_state_{dataset_name}_{epoch+1}.bin")
+                }, f"./save_state_{dataset_name}_keypoint_{epoch+1}.bin")
 
     elif mode == 'inference':
         device = "cpu"
