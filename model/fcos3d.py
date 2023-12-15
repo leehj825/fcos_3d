@@ -189,8 +189,8 @@ class FCOSHead(nn.Module):
         pred_orientation = orientation.squeeze(dim=2)
         pred_offsets = offset.squeeze(dim=2)
 
-        loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
-        loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
 
 
         # Encode ground truth offsets relative to anchors
@@ -529,7 +529,7 @@ class FCOS(nn.Module):
         anchor_generator: Optional[AnchorGenerator] = None,
         head: Optional[nn.Module] = None,
         center_sampling_radius: float = 1.5,
-        score_thresh: float = 0.3,
+        score_thresh: float = 0.5,
         nms_thresh: float = 0.3,
         detections_per_img: int = 100,
         topk_candidates: int = 1000,
@@ -732,13 +732,13 @@ class FCOS(nn.Module):
                 orientation_level = orientation_per_level[anchor_idxs]
                 offset_level = offset_per_level[anchor_idxs]
                 depth_level = depth_per_level[anchor_idxs]
-                print("offset_level", offset_level)
+                #print("offset_level", offset_level)
                 # Convert relative offsets to absolute centers
                 anchors_selected = anchors_per_level[anchor_idxs]
                 anchor_centers = (anchors_selected[:, 2:] + anchors_selected[:, :2]) / 2
                 #absolute_centers = anchor_centers + offset_level * (anchors_selected[:, 2:] - anchors_selected[:, :2])
                 absolute_centers = self.decode_offsets(offset_level, anchors_selected)
-                print("absolute_centers", absolute_centers)
+                #print("absolute_centers", absolute_centers)
                 # Append all outputs to the respective lists
                 image_dimensions_3d.append(dimensions_3d_level)
                 image_offset.append(absolute_centers) 

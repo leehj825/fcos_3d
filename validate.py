@@ -327,7 +327,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, orientation, offset, depth in zip(boxes, scores, labels, dimensions, orientation, offset, depth):
-        if score > 0.4:  # Threshold can be adjusted
+        if score > 0.5:  # Threshold can be adjusted
             #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
@@ -337,16 +337,16 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #corners_2d = project_to_image(corners_3d.T, P)
             #print("corners_2d", corners_2d)
             #draw_3d_box(draw_gt, corners_2d, color="blue")
-            print("offset", offset)
-            print("depth", depth)
-            print("dimension", dimension)
-            print("orientation", orientation)
+            #print("offset", offset)
+            #print("depth", depth)
+            #print("dimension", dimension)
+            #print("orientation", orientation)
 
             corners_3d = create_3d_bbox_2d(dimension, offset, depth, orientation, P)
             #print("bbox", box)
-            print("corners_3d", corners_3d)
+            #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P)
-            print("corners_2d", corners_2d)
+            #print("corners_2d", corners_2d)
             #draw_3d_box(draw_pred, corners_2d, color="green")
             draw_3d_box(draw_gt, corners_2d, color="green")
     
@@ -481,18 +481,16 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 detections = inference(model, image_path, dataset_name)
                 boxes, scores, labels, dimensions, orientation, offset, depth = detections
 
-                print("detections", detections)
+                #print("detections", detections)
                 original_image_path = image_paths[0]
                 save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, orientation, offset, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
                 processed_images += 1
 
-                continue
+                #continue
                 # Convert detections to the required format
                 for i in range(len(boxes)):
-                    box_2d_center_x = (boxes[i][0] + boxes[i][2]) / 2
-                    box_2d_center_y = (boxes[i][1] + boxes[i][3]) / 2
-                    location_3d = back_project_to_3d(box_2d_center_x, box_2d_center_y, locations[i][-1], calib_data[idx][:, :3])  # Use z component from locations[i]
+                    location_3d = back_project_to_3d(offset[i][0], offset[i][1], locations[i][-1], calib_data[idx][:, :3])  # Use z component from locations[i]
                     #print("location_3d", location_3d)
                     # Convert to list and ensure double precision
                     location_3d = [float(coord) for coord in location_3d.tolist()] if isinstance(location_3d, (torch.Tensor, np.ndarray)) else location_3d
