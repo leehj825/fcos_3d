@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-#default_load_checkpoint = 'save_state_kitti_hpc_115.bin'
-default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+default_load_checkpoint = 'save_state_kitti_70.bin'
+#default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-#default_output_image_path = 'output_kitti_hpc_115'
-default_output_image_path = 'output_waymo_hpc_29'
+default_output_image_path = 'output_kitti_70'
+#default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
 # Check if the directory exists
@@ -144,11 +144,12 @@ def inference(model, image_path, dataset_name):
             scores = pred['scores']
             labels = pred['labels']
             dimensions = pred['dimensions_3d']
-            locations = pred['locations_3d']
             orientation = pred['orientation']
+            offset = pred['offset']
+            depth = pred['depth']
         else:
-            boxes, scores, labels, dimensions, locations, orientation = [], [], [], [], [], []
-    return boxes, scores, labels, dimensions, locations, orientation
+            boxes, scores, labels, dimensions, orientation, offset, depth = [], [], [], [], [], [], []
+    return boxes, scores, labels, dimensions, orientation, offset, depth
 
 
 def project_to_image(pts_3d, P):
@@ -263,7 +264,7 @@ def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
 
 # Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
 
-def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, locations, orientation, image_path, output_image_path):
+def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, orientation, offsets, depths, image_path, output_image_path):
     
     if dataset_name == 'kitti':
         #default_calib_folder = default_kitti_calib_folder
@@ -325,9 +326,9 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
-    for box, score, label, dimension, location, orientation in zip(boxes, scores, labels, dimensions, locations, orientation):
-        if score > 0.5:  # Threshold can be adjusted
-            #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+    for box, score, label, dimension, orientation, offset, depth in zip(boxes, scores, labels, dimensions, orientation, offsets, depths):
+        if score > 0.4:  # Threshold can be adjusted
+            draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box
@@ -336,8 +337,14 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #corners_2d = project_to_image(corners_3d.T, P)
             #print("corners_2d", corners_2d)
             #draw_3d_box(draw_gt, corners_2d, color="blue")
+            print("offset", offset)
+            print("depth", depth)
 
-            corners_3d = create_3d_bbox_2d(dimension, box, location[2], orientation, P)
+
+            location = np.array([offset.numpy()[0], offset.numpy()[1], depth.item()])
+            print("location", depth)
+
+            corners_3d = create_3d_bbox(dimension, location, orientation)
             #print("bbox", box)
             #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P)
@@ -474,28 +481,32 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 # Perform inference on single image
                 detections = inference(model, image_path, dataset_name)
-                boxes, scores, labels, dimensions, locations, rotations = detections
+                boxes, scores, labels, dimensions, orientation, offset, depth = detections
 
-                #print(detections)
+                print("detections", detections)
                 original_image_path = image_paths[0]
-                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
+                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, orientation, offset, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
+                processed_images += 1
+
+                continue
 
                 # Convert detections to the required format
                 for i in range(len(boxes)):
-                    box_2d_center_x = (boxes[i][0] + boxes[i][2]) / 2
-                    box_2d_center_y = (boxes[i][1] + boxes[i][3]) / 2
-                    location_3d = back_project_to_3d(box_2d_center_x, box_2d_center_y, locations[i][-1], calib_data[idx][:, :3])  # Use z component from locations[i]
+                    location_3d = back_project_to_3d(offset[i][0], offset[i][1], depth[i].item(), calib_data[idx][:, :3])  # Use z component from locations[i]
+                    
+                    #print("offset[i][0], offset[i][1], depth[i].item()", offset[i][0], offset[i][1], depth[i].item())
+                    #location_3d = back_project_to_3d(offset[i][0].item(), offset[i][1].item(), depth[i].item(), calib_data[idx][:, :3])  # Use z component from locations[i]
                     #print("location_3d", location_3d)
                     # Convert to list and ensure double precision
                     location_3d = [float(coord) for coord in location_3d.tolist()] if isinstance(location_3d, (torch.Tensor, np.ndarray)) else location_3d
                     dimension_3d = [float(dim) for dim in dimensions[i].tolist()] if isinstance(dimensions[i], (torch.Tensor, np.ndarray)) else dimensions[i]
-                    orientation = float(rotations[i].item()) if isinstance(rotations[i], torch.Tensor) else rotations[i]
+                    orientation_each = float(orientation[i].item()) if isinstance(orientation[i], torch.Tensor) else orientation[i]
 
                     pred_box = {
                         'location_3d': location_3d,
                         'dimension_3d': dimension_3d,
-                        'orientation': orientation
+                        'orientation': orientation_each
                     }
                     #print("pred_box", i , pred_box)
                     single_image_predictions.append(pred_box)
@@ -525,9 +536,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 # Print mAP for each threshold
                 print(f"Image: {image_path}")
                 print(f"  mAP: {map_values_by_threshold}")
-
-
-                processed_images += 1
 
         print(f"Completed inference on {processed_images} images.")
 
