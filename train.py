@@ -356,7 +356,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                         }
                         target_list.append(target_dict)
 
-                print("target_list: ", target_list)
+                #print("target_list: ", target_list)
                 
                 # Skip the rest of the loop if target_list is empty
                 if not target_list:

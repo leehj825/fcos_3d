@@ -57,11 +57,11 @@ default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/traini
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_depth_50.bin'
+default_load_checkpoint = 'save_state_kitti_dimen_hpc_20.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_depth_50'
+default_output_image_path = 'output_kitti_dimen_hpc_20'
 #default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
@@ -328,7 +328,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, orientation, offset, depth in zip(boxes, scores, labels, dimensions, orientation, offset, depth):
         if score > 0.5:  # Threshold can be adjusted
-            #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+            draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box
@@ -337,10 +337,10 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #corners_2d = project_to_image(corners_3d.T, P)
             #print("corners_2d", corners_2d)
             #draw_3d_box(draw_gt, corners_2d, color="blue")
-            #print("offset", offset)
-            #print("depth", depth)
-            #print("dimension", dimension)
-            #print("orientation", orientation)
+            print("offset", offset)
+            print("depth", depth)
+            print("dimension", dimension)
+            print("orientation", orientation)
 
             location = torch.cat((offset, depth))
             #print("location", location)

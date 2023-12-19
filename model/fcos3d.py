@@ -111,8 +111,8 @@ class FCOSHead(nn.Module):
         pred_dimensions_volume = torch.prod(pred_dimensions_masked, dim=2)
 
         # Debugging prints for volumes
-        print("GT Dimensions Volume:", gt_dimensions_volume)
-        print("Pred Dimensions Volume:", pred_dimensions_volume)
+        #print("GT Dimensions Volume:", gt_dimensions_volume)
+        #print("Pred Dimensions Volume:", pred_dimensions_volume)
 
         # Ensure non-zero ground truth volume to avoid division by zero
         gt_dimensions_volume = gt_dimensions_volume.clamp(min=1e-6)
@@ -122,7 +122,7 @@ class FCOSHead(nn.Module):
         relative_diff = torch.abs(pred_dimensions_volume - gt_dimensions_volume) / gt_dimensions_volume
 
         # Debugging print for relative difference
-        print("Relative Difference:", relative_diff)
+        #print("Relative Difference:", relative_diff)
 
         if reduction == 'none':
             # Loss for each pair, maintaining tensor format
@@ -292,6 +292,9 @@ class FCOSHead(nn.Module):
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
         loss_offset = self.compute_offset_loss(pred_offsets[foregroud_mask], all_gt_offset_targets[foregroud_mask], reduction="sum")
         loss_dimensions_3d = self.compute_dimension_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        
+        loss_offset += nn.functional.l1_loss(pred_offsets[foregroud_mask], all_gt_offset_targets[foregroud_mask], reduction="mean")
+        loss_dimensions_3d += nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="mean")
 
 
         # Assuming you have a minimum depth to avoid taking log of zero
@@ -490,7 +493,7 @@ class FCOSRegressionHead(nn.Module):
 
 
             # Predictions for 3D dimensions, orientation, and location
-            dimensions_3d = self.dimensions_3d_head(bbox_feature)
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
             orientation = self.orientation_head(bbox_feature)
             #location_3d = self.location_3d_head(bbox_feature)
             offset = self.offset_head(bbox_feature)
