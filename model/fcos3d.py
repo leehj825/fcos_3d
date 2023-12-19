@@ -52,6 +52,120 @@ class FCOSHead(nn.Module):
         self.box_coder = det_utils.BoxLinearCoder(normalize_by_size=True)
         self.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes, num_convs)
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
+    
+    def normalized_angular_difference(self, pred, target):
+        # Compute the angular difference
+        delta = pred - target
+
+        # Adjust for angles greater than π or less than -π
+        delta = torch.where(delta > torch.pi, delta - 2 * torch.pi, delta)
+        delta = torch.where(delta < -torch.pi, delta + 2 * torch.pi, delta)
+
+        # Ensure the difference is non-negative
+        delta = torch.abs(delta)
+
+        # Normalize the difference to the range [0, 1]
+        normalized_delta = delta / torch.pi
+
+        return normalized_delta
+
+
+    def compute_orientation_loss(self, pred_boxes, gt_boxes, reduction='sum'):
+        # Apply the foreground mask
+        pred_orientation_fg = pred_boxes
+        all_gt_orientation_targets_fg = gt_boxes
+
+        # Compute normalized angular difference
+        normalized_angle_diff = self.normalized_angular_difference(pred_orientation_fg, all_gt_orientation_targets_fg)
+
+        # Compute the loss (mean of normalized angular differences)
+        loss_orientation = normalized_angle_diff.mean()
+
+        if reduction == 'none':
+            # Loss for each pair, maintaining tensor format
+            loss = normalized_angle_diff
+        elif reduction == 'mean':
+            # Average IoU loss, using tensor operations
+            loss = normalized_angle_diff.mean()
+        elif reduction == 'sum':
+            # Sum of IoU losses, using tensor operations
+            loss = normalized_angle_diff.sum()
+        else:
+            raise ValueError("Invalid reduction method. Choose 'none', 'mean', or 'sum'.")
+
+        return loss
+
+    def compute_dimension_loss(self, pred_boxes, gt_boxes, reduction='sum'):
+        gt_dimensions_masked = gt_boxes
+        pred_dimensions_masked = pred_boxes
+
+        # Ensure it retains the expected dimensionality
+        if gt_dimensions_masked.dim() == 2:
+            gt_dimensions_masked = gt_dimensions_masked.unsqueeze(0)
+
+        if pred_dimensions_masked.dim() == 2:
+            pred_dimensions_masked = pred_dimensions_masked.unsqueeze(0)
+
+        # Now calculate the volume
+        gt_dimensions_volume = torch.prod(gt_dimensions_masked, dim=2)
+        pred_dimensions_volume = torch.prod(pred_dimensions_masked, dim=2)
+
+        # Debugging prints for volumes
+        print("GT Dimensions Volume:", gt_dimensions_volume)
+        print("Pred Dimensions Volume:", pred_dimensions_volume)
+
+        # Ensure non-zero ground truth volume to avoid division by zero
+        gt_dimensions_volume = gt_dimensions_volume.clamp(min=1e-6)
+        pred_dimensions_volume = pred_dimensions_volume.clamp(min=0)
+
+        # Calculate the relative difference
+        relative_diff = torch.abs(pred_dimensions_volume - gt_dimensions_volume) / gt_dimensions_volume
+
+        # Debugging print for relative difference
+        print("Relative Difference:", relative_diff)
+
+        if reduction == 'none':
+            # Loss for each pair, maintaining tensor format
+            loss = relative_diff.clamp(max=1.0)
+        elif reduction == 'mean':
+            # Average IoU loss, using tensor operations
+            loss = relative_diff.clamp(max=1.0).mean()
+        elif reduction == 'sum':
+            # Sum of IoU losses, using tensor operations
+            loss = relative_diff.clamp(max=1.0).sum()
+        else:
+            raise ValueError("Invalid reduction method. Choose 'none', 'mean', or 'sum'.")
+
+        return loss
+
+
+    def compute_offset_loss(self, pred_boxes, gt_boxes, reduction='sum'):
+
+        gt_offset_masked = pred_boxes
+        pred_offset_masked = gt_boxes
+
+        # Ensure it retains the expected dimensionality
+        if gt_offset_masked.dim() == 2:
+            gt_offset_masked = gt_offset_masked.unsqueeze(0)
+
+        # Ensure it retains the expected dimensionality
+        if pred_offset_masked.dim() == 2:
+            pred_offset_masked = pred_offset_masked.unsqueeze(0)
+
+        # Compute the Euclidean distance (L2 norm) for offset
+        gt_offset_distance = torch.sum(gt_offset_masked ** 2, dim=2)
+        pred_offset_distance = torch.sum(pred_offset_masked** 2, dim=2)
+
+        eps = 1e-6
+
+        # Apply logarithmic transformation to depth values
+        log_gt_offset_distance = torch.log(gt_offset_distance.clamp(min=eps))
+        log_pred_offset_distance = torch.log(pred_offset_distance.clamp(min=eps))
+
+        # Compute the loss for the predicted offsets on a logarithmic scale
+        loss = nn.functional.smooth_l1_loss(log_pred_offset_distance, log_gt_offset_distance, reduction=reduction)
+        return loss
+
 
     def compute_loss(
         self,
@@ -174,10 +288,10 @@ class FCOSHead(nn.Module):
         pred_orientation = orientation.squeeze(dim=2)
         pred_offsets = offset.squeeze(dim=2)
 
-        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")/3
-        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        loss_orientation = self.compute_orientation_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
-        loss_offset = nn.functional.smooth_l1_loss(pred_offsets[foregroud_mask], all_gt_offset_targets[foregroud_mask], reduction="sum")/2
+        loss_offset = self.compute_offset_loss(pred_offsets[foregroud_mask], all_gt_offset_targets[foregroud_mask], reduction="sum")
+        loss_dimensions_3d = self.compute_dimension_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
 
 
         # Assuming you have a minimum depth to avoid taking log of zero
@@ -190,6 +304,39 @@ class FCOSHead(nn.Module):
         # Compute the depth loss for the predicted depths
         loss_depth = nn.functional.smooth_l1_loss(log_pred_depth, log_gt_depth, reduction="sum")
 
+
+        #print("all_gt_dimensions_targets.shape", all_gt_dimensions_targets.shape)
+        #print("pred_dimensions_3d.shape", pred_dimensions_3d.shape)
+
+        # Apply the foreground mask
+        #gt_dimensions_masked = all_gt_dimensions_targets[foregroud_mask]
+        #pred_dimensions_masked = pred_dimensions_3d[foregroud_mask]
+
+        # Ensure it retains the expected dimensionality
+        #if gt_dimensions_masked.dim() == 2:
+        #    gt_dimensions_masked = gt_dimensions_masked.unsqueeze(0)
+
+        # Ensure it retains the expected dimensionality
+        #if pred_dimensions_masked.dim() == 2:
+        #    pred_dimensions_masked = pred_dimensions_masked.unsqueeze(0)
+
+        # Now calculate the volume
+        #gt_dimensions_volume = torch.prod(gt_dimensions_masked, dim=2)
+        #pred_dimensions_volume = torch.prod(pred_dimensions_masked, dim=2)
+
+        
+        # Ensure non-zero ground truth volume to avoid division by zero
+        #gt_dimensions_volume = gt_dimensions_volume.clamp(min=1e-6)
+        #pred_dimensions_volume = pred_dimensions_volume.clamp(min=0)
+
+        # Calculate the relative difference
+        #relative_diff = torch.abs(pred_dimensions_volume - gt_dimensions_volume) / gt_dimensions_volume
+        #print("relative_diff", relative_diff)
+
+        # Normalize the loss to be close to 0 for small differences and scale higher for larger differences
+        # Here, the loss is capped at 1.0
+        #loss_dimensions_3d = relative_diff.clamp(max=1.0).sum()
+        
         return {
             "classification": loss_cls / max(1, num_foreground),
             "bbox_regression": loss_bbox_reg / max(1, num_foreground),
