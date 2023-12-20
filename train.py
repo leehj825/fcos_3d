@@ -37,8 +37,8 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
-default_load_checkpoint = 'save_state_kitti_3.bin'
-#default_load_checkpoint = None
+#default_load_checkpoint = 'save_state_kitti_3.bin'
+default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -369,7 +369,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
                 
                 # Print every 5 batches
-                if (batch_idx + 1) % 5 == 0:
+                if (batch_idx + 1) % 10 == 0:
                     for loss_name, loss_value in loss_dict.items():
                         loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 
@@ -388,7 +388,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
             scheduler.step(loss_value)
 
             # Save checkpoint
-            if (epoch+1) % 1 == 0:
+            if (epoch+1) % 5 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),

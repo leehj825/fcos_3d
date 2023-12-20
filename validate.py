@@ -57,11 +57,11 @@ default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/traini
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = 'save_state_kitti_9.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_depth_50.bin'
 #default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_9'
+default_output_image_path = 'output_kitti_depth_50'
 #default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
@@ -484,7 +484,7 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 detections = inference(model, image_path, dataset_name)
                 boxes, scores, labels, dimensions, orientation, offset, depth = detections
 
-                #print("detections", detections)
+                print("detections", detections)
                 #print("orientation", detections)
                 original_image_path = image_paths[0]
                 save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, orientation, offset, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")

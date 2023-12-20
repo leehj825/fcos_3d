@@ -343,11 +343,11 @@ class FCOSRegressionHead(nn.Module):
 
 
             # Predictions for 3D dimensions, orientation, and location
-            dimensions_3d = self.dimensions_3d_head(bbox_feature)
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
             orientation = self.orientation_head(bbox_feature)
             #location_3d = self.location_3d_head(bbox_feature)
             offset = self.offset_head(bbox_feature)
-            depth = self.depth_head(bbox_feature)
+            depth = nn.functional.relu(self.depth_head(bbox_feature))
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
