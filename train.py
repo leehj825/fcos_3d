@@ -24,19 +24,19 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_1000/"
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
 default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
 default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
 default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
-default_learning_rate = 0.001
+default_learning_rate = 0.0001
 #default_load_checkpoint = 'save_state_kitti_3.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
@@ -45,6 +45,19 @@ default_output_image_path = 'output_save_state_3.png'
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 #device = "cpu"
 print(device)
+
+def dump_trainable_params(model):
+    total_params = 0
+    print("Trainable Parameters:")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            param_shape = param.size()
+            num_params = param.numel()
+            total_params += num_params
+            print(f"{name}: shape = {param_shape}, total params = {num_params}")
+    print(f"Total trainable parameters: {total_params}")
+
+
 
 def custom_collate(batch, dataset_name):
     # Check each data entry in the batch
@@ -304,6 +317,12 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     if mode == 'train':
+
+
+        # Example usage:
+        # Assuming 'model' is your FCOS model
+        dump_trainable_params(model)
+
         # Training loop
         for epoch in range(start_epoch, num_epochs):
             #for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):

@@ -52,6 +52,7 @@ class FCOSHead(nn.Module):
         self.box_coder = det_utils.BoxLinearCoder(normalize_by_size=True)
         self.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes, num_convs)
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
+        self.regression_3d_head = FCOSRegression3DHead(in_channels, num_anchors, num_convs)
 
     def compute_loss(
         self,
@@ -202,7 +203,8 @@ class FCOSHead(nn.Module):
 
     def forward(self, x: List[Tensor]) -> Dict[str, Tensor]:
         cls_logits = self.classification_head(x)
-        bbox_regression, bbox_ctrness, dimensions_3d, orientation, offset, depth = self.regression_head(x)
+        bbox_regression, bbox_ctrness  = self.regression_head(x)
+        dimensions_3d, orientation, offset, depth = self.regression_3d_head(x)
         #print("regression_head dimensions_3d", dimensions_3d)
         #print("regression_head bbox_regression", bbox_regression)
         return {
@@ -315,11 +317,7 @@ class FCOSRegressionHead(nn.Module):
 
         self.bbox_reg = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
         self.bbox_ctrness = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        self.offset_head = nn.Conv2d(in_channels, num_anchors * 2, kernel_size=3, stride=1, padding=1)
-        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.offset_head, self.depth_head]:
+        for layer in [self.bbox_ctrness]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
 
@@ -328,26 +326,14 @@ class FCOSRegressionHead(nn.Module):
                 torch.nn.init.normal_(layer.weight, std=0.01)
                 torch.nn.init.zeros_(layer.bias)
 
-    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor]:
         all_bbox_regression = []
         all_bbox_ctrness = []
-        all_dimensions_3d = []
-        all_orientation = []
-        all_offset = []
-        all_depth = []
 
         for features in x:
             bbox_feature = self.conv(features)
             bbox_regression = nn.functional.relu(self.bbox_reg(bbox_feature))
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
-
-
-            # Predictions for 3D dimensions, orientation, and location
-            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
-            orientation = self.orientation_head(bbox_feature)
-            #location_3d = self.location_3d_head(bbox_feature)
-            offset = self.offset_head(bbox_feature)
-            depth = nn.functional.relu(self.depth_head(bbox_feature))
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -361,6 +347,66 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = bbox_ctrness.permute(0, 3, 4, 1, 2)
             bbox_ctrness = bbox_ctrness.reshape(N, -1, 1)
             all_bbox_ctrness.append(bbox_ctrness)
+
+        return (
+            torch.cat(all_bbox_regression, dim=1),
+            torch.cat(all_bbox_ctrness, dim=1)
+        )
+
+class FCOSRegression3DHead(nn.Module):
+    """
+    A 3D head for use in FCOS, predicting dimensions, orientation, offset, and depth.
+    """
+    def __init__(
+        self,
+        in_channels: int,
+        num_anchors: int,
+        num_convs: int = 4,
+        norm_layer: Optional[Callable[..., nn.Module]] = None,
+    ):
+        super().__init__()
+
+        if norm_layer is None:
+            norm_layer = partial(nn.GroupNorm, 32)
+
+        conv = []
+        for _ in range(num_convs):
+            conv.append(nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1))
+            conv.append(norm_layer(in_channels))
+            conv.append(nn.ReLU())
+        self.conv = nn.Sequential(*conv)
+
+        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
+        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+        self.offset_head = nn.Conv2d(in_channels, num_anchors * 2, kernel_size=3, stride=1, padding=1)
+        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+        for layer in [self.dimensions_3d_head, self.orientation_head, self.offset_head, self.depth_head]:
+            torch.nn.init.normal_(layer.weight, std=0.01)
+            torch.nn.init.zeros_(layer.bias)
+
+        for layer in self.conv.children():
+            if isinstance(layer, nn.Conv2d):
+                torch.nn.init.normal_(layer.weight, std=0.01)
+                torch.nn.init.zeros_(layer.bias)
+
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+
+        all_dimensions_3d = []
+        all_orientation = []
+        all_offset = []
+        all_depth = []
+
+        for features in x:
+            feature = self.conv(features)
+
+            # Predictions for 3D dimensions, orientation, and location
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(feature))
+
+            N, _, H, W = dimensions_3d.shape
+
+            orientation = self.orientation_head(feature)
+            offset = self.offset_head(feature)
+            depth = nn.functional.relu(self.depth_head(feature))
 
             # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
             dimensions_3d = dimensions_3d.view(N, -1, 3, H, W)
@@ -387,13 +433,12 @@ class FCOSRegressionHead(nn.Module):
             all_depth.append(depth)
 
         return (
-            torch.cat(all_bbox_regression, dim=1),
-            torch.cat(all_bbox_ctrness, dim=1),
             torch.cat(all_dimensions_3d, dim=1),
             torch.cat(all_orientation, dim=1),
             torch.cat(all_offset, dim=1),
             torch.cat(all_depth, dim=1)
         )
+
 
 class FCOS(nn.Module):
     """
@@ -849,6 +894,7 @@ def fcos3d(
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
     trainable_backbone_layers: Optional[int] = None,
+    freeze_backbone: bool = False,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:
     # Verify and load the backbone weights
@@ -859,8 +905,19 @@ def fcos3d(
         # Initialize the backbone without pretrained weights
         backbone = resnet101(weights=None, progress=progress)
 
+    # Freeze the backbone if requested
+    if freeze_backbone:
+        for param in backbone.parameters():
+            param.requires_grad = False
+
     # Extract FPN from the backbone
-    trainable_backbone_layers = _validate_trainable_layers(weights_backbone is not None, trainable_backbone_layers, 5, 3)
+    if not freeze_backbone:
+        # Only consider trainable layers if the backbone is not frozen
+        trainable_backbone_layers = _validate_trainable_layers(weights_backbone is not None, trainable_backbone_layers, 5, 3)
+    else:
+        # If freezing the backbone, set trainable layers to 0
+        trainable_backbone_layers = 0
+
     norm_layer = misc_nn_ops.FrozenBatchNorm2d if weights_backbone is not None else nn.BatchNorm2d
     backbone = _resnet_fpn_extractor(
         backbone, trainable_backbone_layers, returned_layers=[2, 3, 4], extra_blocks=LastLevelP6P7(256, 256)
@@ -869,4 +926,3 @@ def fcos3d(
     # Rest of your FCOS model initialization
     model = FCOS(backbone, num_classes, **kwargs)
     return model
-

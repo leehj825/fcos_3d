@@ -43,26 +43,28 @@ CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
 default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/fcos_3d/ddata/kitti_200/training/image_2/000025.png'
+default_kitti_image_path = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
 default_kitti_calib_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/Users/hyejunlee/fcos_3d/ddata/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/ddata/waymo_single/training/calib/'
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/label_0/'
+default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_depth_50.bin'
-#default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+#default_load_checkpoint = 'save_state_kitti_depth_hpc_50.bin'
+#default_load_checkpoint = 'save_state_waymo_depth_hpc_10.bin'
+default_load_checkpoint = 'save_state_waymo_40.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_depth_50'
-#default_output_image_path = 'output_waymo_hpc_29'
+#default_output_image_path = 'output_kitti_depth_hpc_50'
+#default_output_image_path = 'output_waymo_depth_hpc_10'
+default_output_image_path = 'output_waymo_40'
 num_images = 5
 
 # Check if the directory exists
@@ -465,7 +467,7 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
         model = model.to(device)
 
         processed_images = 0
-        iou_thresholds = [0.0, 0.1, 0.2, 0.3, 0.4]  # Define the IoU thresholds you want to use
+        iou_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]  # Define the IoU thresholds you want to use
 
         for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):
             if num_images and processed_images >= num_images:
