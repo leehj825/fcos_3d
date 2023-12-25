@@ -24,7 +24,7 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_1000/"
 default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
@@ -289,7 +289,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
     # Construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=default_learning_rate, weight_decay=0.0005)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=1, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=2, verbose=True)
 
     model.zero_grad()
 

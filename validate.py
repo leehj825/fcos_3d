@@ -54,17 +54,19 @@ default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/trainin
 default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
-default_learning_rate = 0.001
+default_learning_rate = 0.0001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-#default_load_checkpoint = 'save_state_kitti_depth_hpc_50.bin'
-#default_load_checkpoint = 'save_state_waymo_depth_hpc_10.bin'
-default_load_checkpoint = 'save_state_waymo_40.bin'
+#default_load_checkpoint = 'save_state_kitti_depth_hpc_60.bin'
+#default_load_checkpoint = 'save_state_kitti_15.bin'
+default_load_checkpoint = 'save_state_waymo_depth_hpc_15.bin'
+#default_load_checkpoint = 'save_state_waymo_40.bin'
 #default_load_checkpoint = None
 
-#default_output_image_path = 'output_kitti_depth_hpc_50'
-#default_output_image_path = 'output_waymo_depth_hpc_10'
-default_output_image_path = 'output_waymo_40'
+#default_output_image_path = 'output_kitti_depth_hpc_60'
+#default_output_image_path = 'output_kitti_15'
+default_output_image_path = 'output_waymo_depth_hpc_15_P'
+#default_output_image_path = 'output_waymo_40'
 num_images = 5
 
 # Check if the directory exists
@@ -232,8 +234,11 @@ def create_3d_bbox_2d(dimensions, box_2d, location_z, rotation_y, P):
     h, w, l = dimensions
 
     # Use the center of the 2D bounding box as x, y
-    x_center_2d = box_2d[0]
-    y_center_2d = box_2d[1]
+    #x_center_2d = box_2d[0]
+    #y_center_2d = box_2d[1]
+    # Use the center of the 2D bounding box as x, y
+    x_center_2d = (box_2d[0] + box_2d[2]) / 2
+    y_center_2d = (box_2d[1] + box_2d[3]) / 2
 
     #print("location_z", location_z)
     # Use the z-coordinate from the 3D location
@@ -347,7 +352,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             location = torch.cat((offset, depth))
             #print("location", location)
 
-            corners_3d = create_3d_bbox(dimension, location, orientation)
+            corners_3d = create_3d_bbox_2d(dimension, box, depth, orientation, P)
             #print("bbox", box)
             #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P)
@@ -419,14 +424,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             print(f"Loading checkpoint: {load}")
             checkpoint = torch.load(load)
             model.load_state_dict(checkpoint['model_state_dict'])
-            start_epoch = checkpoint['epoch']
-
-            # If optimizer and scheduler states were saved, load them
-            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-            if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         except RuntimeError as e:
             print(f"Error loading checkpoint: {e}")
 
@@ -434,14 +431,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             try:
                 checkpoint = torch.load(load, map_location=torch.device('cpu'))
                 model.load_state_dict(checkpoint['model_state_dict'])
-                start_epoch = checkpoint['epoch']
-
-                # If optimizer and scheduler states were saved, load them
-                if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             except RuntimeError as e:
                 print(f"Error loading checkpoint with map_location: {e}")
 
@@ -450,14 +439,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 try:
                     checkpoint = torch.load(load, pickle_module=pickle, encoding='utf-8')
                     model.load_state_dict(checkpoint['model_state_dict'])
-                    start_epoch = checkpoint['epoch']
-
-                    # If optimizer and scheduler states were saved, load them
-                    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
                 except RuntimeError as e:
                     print(f"Error loading checkpoint with pickle_module: {e}")
                     # If this fails, the file might be corrupted or not a valid checkpoint
@@ -496,7 +477,12 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 #continue
                 # Convert detections to the required format
                 for i in range(len(boxes)):
-                    location_3d = torch.cat((offset[i], depth[i]))
+                    box_2d_center_x = (boxes[i][0] + boxes[i][2]) / 2
+                    box_2d_center_y = (boxes[i][1] + boxes[i][3]) / 2
+                    location_3d = back_project_to_3d(box_2d_center_x, box_2d_center_y, depth[i].item(), calib_data[idx][:, :3])  # Use z component from locations[i]
+                    
+                    #print("offset[i][0], offset[i][1], depth[i].item()", offset[i][0], offset[i][1], depth[i].item())
+                    #location_3d = back_project_to_3d(offset[i][0].item(), offset[i][1].item(), depth[i].item(), calib_data[idx][:, :3])  # Use z component from locations[i]
                     #print("location_3d", location_3d)
                     # Convert to list and ensure double precision
                     location_3d = [float(loc) for loc in location_3d.tolist()] if isinstance(location_3d, (torch.Tensor, np.ndarray)) else location_3d
