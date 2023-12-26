@@ -85,14 +85,14 @@ class Kitti(VisionDataset):
             raise RuntimeError("Dataset not found. You may use download=True to download it.")
 
         image_dir = os.path.join(self.root, self._location, self.image_dir_name)
+        calib_dir = os.path.join(self.root, self._location, self.calib_dir_name)
         if self.train:
             labels_dir = os.path.join(self.root, self._location, self.labels_dir_name)
-            calib_dir = os.path.join(self.root, self._location, self.calib_dir_name)
         for img_file in os.listdir(image_dir):
             self.images.append(os.path.join(image_dir, img_file))
+            self.calibrations.append(os.path.join(calib_dir, f"{img_file.split('.')[0]}.txt"))
             if self.train:
                 self.targets.append(os.path.join(labels_dir, f"{img_file.split('.')[0]}.txt"))
-                self.calibrations.append(os.path.join(calib_dir, f"{img_file.split('.')[0]}.txt"))
 
  
 
@@ -106,6 +106,13 @@ class Kitti(VisionDataset):
             target is a list of dictionaries with various keys. If label or calibration file is missing, returns None.
         """
         image_path = self.images[index]  # Get the path of the image
+
+        # Check if calibration file exists (if necessary)
+        calib_file = self.calibrations[index]
+        if not os.path.exists(calib_file):
+            print(f"Calibration file missing: {calib_file}")
+            return None, None, None, image_path
+
         if self.train:
             # Check if label file exists
             label_file = self.targets[index]
@@ -113,23 +120,17 @@ class Kitti(VisionDataset):
                 print(f"Label file missing: {label_file}")
                 return None, None, None, image_path
 
-            # Check if calibration file exists (if necessary)
-            calib_file = self.calibrations[index]
-            if not os.path.exists(calib_file):
-                print(f"Calibration file missing: {calib_file}")
-                return None, None, None, image_path
-
         image = Image.open(image_path)
+        calib_data = self._parse_calibration(index)
 
         if self.train:
             target = self._parse_target(index)
-            calib_data = self._parse_calibration(index)
 
         if self.transforms:
             image, target = self.transforms(image, target)
 
         if not self.train:
-            return image, None, None, image_path
+            return image, None, calib_data, image_path
             
         return image, target, calib_data, image_path
 

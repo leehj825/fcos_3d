@@ -52,6 +52,7 @@ class FCOSHead(nn.Module):
         self.box_coder = det_utils.BoxLinearCoder(normalize_by_size=True)
         self.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes, num_convs)
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
+        self.regression_3d_head = FCOSRegression3DHead(in_channels, num_anchors, 6)
 
     def compute_loss(
         self,
@@ -67,13 +68,13 @@ class FCOSHead(nn.Module):
 
         dimensions_3d = head_outputs["dimensions_3d"]  # [N, HWA, 3]
         orientation = head_outputs["orientation"]  # [N, HWA, 1]
-        location_3d = head_outputs["location_3d"]  # [N, HWA, 3]
+        depth = head_outputs["depth"]  # [N, HWA, 1]
 
         all_gt_classes_targets = []
         all_gt_boxes_targets = []
         all_gt_dimensions_targets = []  # For 3D dimensions
         all_gt_orientation_targets = [] # For orientation
-        all_gt_location_targets = []    # For location
+        all_gt_depth_targets = []    # For location
 
         for targets_per_image, matched_idxs_per_image in zip(targets, matched_idxs):
             if len(targets_per_image["labels"]) == 0:
@@ -81,28 +82,28 @@ class FCOSHead(nn.Module):
                 gt_boxes_targets = targets_per_image["boxes"].new_zeros((len(matched_idxs_per_image), 4))
                 gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
                 gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
-                gt_location_targets = targets_per_image["locations_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D location
+                gt_depth_targets = targets_per_image["depth"].new_zeros((len(matched_idxs_per_image), 1))
             else:
                 gt_classes_targets = targets_per_image["labels"][matched_idxs_per_image.clip(min=0)]
                 gt_boxes_targets = targets_per_image["boxes"][matched_idxs_per_image.clip(min=0)]
                 gt_dimensions_targets = targets_per_image["dimensions_3d"][matched_idxs_per_image.clip(min=0)]
                 gt_orientation_targets = targets_per_image["orientations_y"][matched_idxs_per_image.clip(min=0)]
-                gt_location_targets = targets_per_image["locations_3d"][matched_idxs_per_image.clip(min=0)]
+                gt_depth_targets = targets_per_image["depth"][matched_idxs_per_image.clip(min=0)]
 
             gt_classes_targets[matched_idxs_per_image < 0] = -1  # background
             all_gt_classes_targets.append(gt_classes_targets)
             all_gt_boxes_targets.append(gt_boxes_targets)
             all_gt_dimensions_targets.append(gt_dimensions_targets)
             all_gt_orientation_targets.append(gt_orientation_targets)
-            all_gt_location_targets.append(gt_location_targets)
+            all_gt_depth_targets.append(gt_depth_targets)
 
         # List[Tensor] to Tensor conversion
-        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_location_targets, anchors = (
+        all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_depth_targets, anchors = (
             torch.stack(all_gt_boxes_targets),
             torch.stack(all_gt_classes_targets),
             torch.stack(all_gt_dimensions_targets),
             torch.stack(all_gt_orientation_targets),
-            torch.stack(all_gt_location_targets),
+            torch.stack(all_gt_depth_targets),
             torch.stack(anchors),
         )
 
@@ -166,13 +167,20 @@ class FCOSHead(nn.Module):
 
         pred_dimensions_3d = dimensions_3d.squeeze(dim=2)
         pred_orientation = orientation.squeeze(dim=2)
-        pred_location_3d = location_3d.squeeze(dim=2)
 
-        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
-        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
-        loss_location_3d = nn.functional.smooth_l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")/3
 
+        # Assuming you have a minimum depth to avoid taking log of zero
+        min_depth = 1e-6
+
+        # Apply logarithmic transformation to depth values
+        log_gt_depth = torch.log(all_gt_depth_targets[foregroud_mask].clamp(min=min_depth))
+        log_pred_depth = torch.log(depth[foregroud_mask].clamp(min=min_depth).squeeze(1))
+
+        # Compute the depth loss for the predicted depths
+        loss_depth = nn.functional.smooth_l1_loss(log_pred_depth, log_gt_depth, reduction="sum")
 
         return {
             "classification": loss_cls / max(1, num_foreground),
@@ -180,12 +188,13 @@ class FCOSHead(nn.Module):
             "bbox_ctrness": loss_bbox_ctrness / max(1, num_foreground),
             "dimensions_3d": loss_dimensions_3d / max(1, num_foreground),
             "orientation": loss_orientation / max(1, num_foreground),
-            "location_3d": loss_location_3d / max(1, num_foreground)
+            "depth": loss_depth / max(1, num_foreground)  # Include depth loss
         }
 
     def forward(self, x: List[Tensor]) -> Dict[str, Tensor]:
         cls_logits = self.classification_head(x)
-        bbox_regression, bbox_ctrness, dimensions_3d, orientation, location_3d = self.regression_head(x)
+        bbox_regression, bbox_ctrness  = self.regression_head(x)
+        dimensions_3d, orientation, depth = self.regression_3d_head(x)
         #print("regression_head dimensions_3d", dimensions_3d)
         #print("regression_head bbox_regression", bbox_regression)
         return {
@@ -194,7 +203,7 @@ class FCOSHead(nn.Module):
             "bbox_ctrness": bbox_ctrness,
             "dimensions_3d": dimensions_3d,
             "orientation": orientation,
-            "location_3d": location_3d,
+            "depth": depth
         }
 
 
@@ -297,10 +306,7 @@ class FCOSRegressionHead(nn.Module):
 
         self.bbox_reg = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
         self.bbox_ctrness = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        self.location_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.location_3d_head]:
+        for layer in [self.bbox_ctrness]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
 
@@ -309,23 +315,14 @@ class FCOSRegressionHead(nn.Module):
                 torch.nn.init.normal_(layer.weight, std=0.01)
                 torch.nn.init.zeros_(layer.bias)
 
-    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor]:
         all_bbox_regression = []
         all_bbox_ctrness = []
-        all_dimensions_3d = []
-        all_orientation = []
-        all_location_3d = []
 
         for features in x:
             bbox_feature = self.conv(features)
             bbox_regression = nn.functional.relu(self.bbox_reg(bbox_feature))
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
-
-
-            # Predictions for 3D dimensions, orientation, and location
-            dimensions_3d = self.dimensions_3d_head(bbox_feature)
-            orientation = self.orientation_head(bbox_feature)
-            location_3d = self.location_3d_head(bbox_feature)
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -340,6 +337,116 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = bbox_ctrness.reshape(N, -1, 1)
             all_bbox_ctrness.append(bbox_ctrness)
 
+        return (
+            torch.cat(all_bbox_regression, dim=1),
+            torch.cat(all_bbox_ctrness, dim=1)
+        )
+
+class SEBlock(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+class FCOSRegression3DHead(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        num_anchors: int,
+        num_convs: int = 6,
+        norm_layer: Optional[Callable[..., nn.Module]] = None,
+        enhanced_layers: int = 2,  # Additional layers for orientation and offset
+    ):
+        super().__init__()
+        if norm_layer is None:
+            norm_layer = partial(nn.GroupNorm, 32)
+
+        self.conv = nn.ModuleList()
+        for _ in range(num_convs):
+            conv_block = nn.Sequential(
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                norm_layer(in_channels),
+                nn.LeakyReLU(),
+                SEBlock(in_channels)
+            )
+            self.conv.append(conv_block)
+
+        # Enhanced branches for orientation and offset
+        self.orientation_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+
+        self.depth_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+
+        # Heads for different tasks
+        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
+        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+
+        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+
+        # Initialize weights
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.normal_(m.weight, std=0.01)
+                torch.nn.init.zeros_(m.bias)
+
+    def _forward_impl(self, x: Tensor) -> Tensor:
+        identity = x
+        for conv_block in self.conv:
+            x = conv_block(x) + identity
+            identity = x
+        return x
+
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
+        all_dimensions_3d = []
+        all_orientation = []
+        all_depth = []
+
+        for features in x:
+            feature = self._forward_impl(features)
+
+            # Process through enhanced branches
+            orientation_features = self.orientation_branch(feature)
+            depth_features = self.depth_branch(feature)
+
+            # Dimension, orientation, offset, and depth predictions
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(feature))
+            orientation = self.orientation_head(orientation_features)
+            depth = nn.functional.relu(self.depth_head(depth_features))
+
+            N, _, H, W = dimensions_3d.shape
+
             # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
             dimensions_3d = dimensions_3d.view(N, -1, 3, H, W)
             dimensions_3d = dimensions_3d.permute(0, 3, 4, 1, 2)
@@ -353,18 +460,17 @@ class FCOSRegressionHead(nn.Module):
             all_orientation.append(orientation)
 
             # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
-            location_3d = location_3d.view(N, -1, 3, H, W)
-            location_3d = location_3d.permute(0, 3, 4, 1, 2)
-            location_3d = location_3d.reshape(N, -1, 3)
-            all_location_3d.append(location_3d)
+            depth = depth.view(N, -1, 1, H, W)
+            depth = depth.permute(0, 3, 4, 1, 2)
+            depth = depth.reshape(N, -1, 1)
+            all_depth.append(depth)
 
         return (
-            torch.cat(all_bbox_regression, dim=1),
-            torch.cat(all_bbox_ctrness, dim=1),
             torch.cat(all_dimensions_3d, dim=1),
             torch.cat(all_orientation, dim=1),
-            torch.cat(all_location_3d, dim=1)
+            torch.cat(all_depth, dim=1)
         )
+
 
 class FCOS(nn.Module):
     """
@@ -612,18 +718,18 @@ class FCOS(nn.Module):
             anchors_per_image, image_shape = anchors[index], image_shapes[index]
 
             dimensions_3d_per_image = [dim[index] for dim in dimensions_3d] if dimensions_3d else None
-            locations_3d_per_image = [loc[index] for loc in locations_3d] if locations_3d else None
             orientation_per_image = [rot[index] for rot in orientation] if orientation else None
+            depth_per_image = [dep[index] for dep in depth] if depth else None
 
             image_boxes = []
             image_scores = []
             image_labels = []
             image_dimensions_3d = []
-            image_locations_3d = []
             image_orientation = []
+            image_depth = []
 
-            for box_regression_per_level, logits_per_level, box_ctrness_per_level, anchors_per_level, dimensions_3d_per_level, locations_3d_per_level, orientation_per_level in zip(
-                box_regression_per_image, logits_per_image, box_ctrness_per_image, anchors_per_image, dimensions_3d_per_image, locations_3d_per_image, orientation_per_image
+            for box_regression_per_level, logits_per_level, box_ctrness_per_level, anchors_per_level, dimensions_3d_per_level, orientation_per_level, depth_per_level in zip(
+                box_regression_per_image, logits_per_image, box_ctrness_per_image, anchors_per_image, dimensions_3d_per_image, orientation_per_image, depth_per_image
             ):
                 num_classes = logits_per_level.shape[-1]
 
@@ -655,21 +761,21 @@ class FCOS(nn.Module):
 
                 # Decode 3D outputs for the current level
                 dimensions_3d_level = dimensions_3d_per_level[anchor_idxs]
-                locations_3d_level = locations_3d_per_level[anchor_idxs]
                 orientation_level = orientation_per_level[anchor_idxs]
 
+                depth_level = depth_per_level[anchor_idxs]
                 # Append all outputs to the respective lists
                 image_dimensions_3d.append(dimensions_3d_level)
-                image_locations_3d.append(locations_3d_level)
                 image_orientation.append(orientation_level)
+                image_depth.append(depth_level)
 
             image_boxes = torch.cat(image_boxes, dim=0)
             image_scores = torch.cat(image_scores, dim=0)
             image_labels = torch.cat(image_labels, dim=0)
             # Concatenate all outputs for the current image
             image_dimensions_3d = torch.cat(image_dimensions_3d, dim=0)
-            image_locations_3d = torch.cat(image_locations_3d, dim=0)
             image_orientation = torch.cat(image_orientation, dim=0)
+            image_depth = torch.cat(image_depth, dim=0)
 
             # Filter based on NMS keep indices
             keep = box_ops.batched_nms(image_boxes, image_scores, image_labels, self.nms_thresh)
@@ -687,8 +793,8 @@ class FCOS(nn.Module):
             detections[index]["labels"] = image_labels[keep]
 
             detections[index]["dimensions_3d"] = image_dimensions_3d[keep]
-            detections[index]["locations_3d"] = image_locations_3d[keep]
             detections[index]["orientation"] = image_orientation[keep]
+            detections[index]["depth"] = image_depth[keep]
 
 
 
@@ -822,6 +928,7 @@ def fcos3d(
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
     trainable_backbone_layers: Optional[int] = None,
+    freeze_backbone: bool = False,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:
     # Verify and load the backbone weights
@@ -832,8 +939,19 @@ def fcos3d(
         # Initialize the backbone without pretrained weights
         backbone = resnet101(weights=None, progress=progress)
 
+    # Freeze the backbone if requested
+    if freeze_backbone:
+        for param in backbone.parameters():
+            param.requires_grad = False
+
     # Extract FPN from the backbone
-    trainable_backbone_layers = _validate_trainable_layers(weights_backbone is not None, trainable_backbone_layers, 5, 3)
+    if not freeze_backbone:
+        # Only consider trainable layers if the backbone is not frozen
+        trainable_backbone_layers = _validate_trainable_layers(weights_backbone is not None, trainable_backbone_layers, 5, 3)
+    else:
+        # If freezing the backbone, set trainable layers to 0
+        trainable_backbone_layers = 0
+
     norm_layer = misc_nn_ops.FrozenBatchNorm2d if weights_backbone is not None else nn.BatchNorm2d
     backbone = _resnet_fpn_extractor(
         backbone, trainable_backbone_layers, returned_layers=[2, 3, 4], extra_blocks=LastLevelP6P7(256, 256)
