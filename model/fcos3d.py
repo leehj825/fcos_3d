@@ -354,21 +354,33 @@ class FCOSRegressionHead(nn.Module):
             torch.cat(all_bbox_ctrness, dim=1)
         )
 
+class SEBlock(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
 
 class FCOSRegression3DHead(nn.Module):
-    """
-    An updated 3D head for FCOS, predicting dimensions, orientation, offset, and depth.
-    Now includes residual connections and advanced activation functions.
-    """
     def __init__(
         self,
         in_channels: int,
         num_anchors: int,
-        num_convs: int = 6,  # Increased number of convolutions
+        num_convs: int = 6,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
+        enhanced_layers: int = 2,  # Additional layers for orientation and offset
     ):
         super().__init__()
-
         if norm_layer is None:
             norm_layer = partial(nn.GroupNorm, 32)
 
@@ -377,9 +389,37 @@ class FCOSRegression3DHead(nn.Module):
             conv_block = nn.Sequential(
                 nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
                 norm_layer(in_channels),
-                nn.LeakyReLU()  # Advanced activation function
+                nn.LeakyReLU(),
+                SEBlock(in_channels)
             )
             self.conv.append(conv_block)
+
+        # Enhanced branches for orientation and offset
+        self.orientation_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+
+        self.offset_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
 
         # Heads for different tasks
         self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
@@ -396,7 +436,7 @@ class FCOSRegression3DHead(nn.Module):
     def _forward_impl(self, x: Tensor) -> Tensor:
         identity = x
         for conv_block in self.conv:
-            x = conv_block(x) + identity  # Residual connection
+            x = conv_block(x) + identity
             identity = x
         return x
 
@@ -409,10 +449,14 @@ class FCOSRegression3DHead(nn.Module):
         for features in x:
             feature = self._forward_impl(features)
 
+            # Process through enhanced branches
+            orientation_features = self.orientation_branch(feature)
+            offset_features = self.offset_branch(feature)
+
             # Dimension, orientation, offset, and depth predictions
             dimensions_3d = nn.functional.relu(self.dimensions_3d_head(feature))
-            orientation = self.orientation_head(feature)
-            offset = self.offset_head(feature)
+            orientation = self.orientation_head(orientation_features)
+            offset = self.offset_head(offset_features)
             depth = nn.functional.relu(self.depth_head(feature))
 
             N, _, H, W = dimensions_3d.shape
