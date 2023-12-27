@@ -698,8 +698,8 @@ class FCOS(nn.Module):
         dimensions_3d = head_outputs["dimensions_3d"]  # List of Tensors
 
         #print("head_output dimensions_3d", dimensions_3d)
-        locations_3d = head_outputs["location_3d"]  # List of Tensors
         orientation = head_outputs["orientation"]  # List of Tensors
+        depth = head_outputs["depth"]  # List of Tensors
 
         #print("postprocess_detections dimensions_3d", dimensions_3d)
         #print("postprocess_detections box_regression", box_regression)
