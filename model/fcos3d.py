@@ -382,7 +382,21 @@ class FCOSRegression3DHead(nn.Module):
             )
             self.conv.append(conv_block)
 
-        # Enhanced branches for orientation and offset
+        self.dimension_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+
+        # Enhanced orientation branch with additional layers and attention mechanism
         self.orientation_branch = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(),
@@ -390,6 +404,7 @@ class FCOSRegression3DHead(nn.Module):
             *[
                 nn.Sequential(
                     nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
                     nn.LeakyReLU(),
                     SEBlock(in_channels)
                 ) for _ in range(enhanced_layers)
@@ -439,10 +454,12 @@ class FCOSRegression3DHead(nn.Module):
             # Process through enhanced branches
             orientation_features = self.orientation_branch(feature)
             depth_features = self.depth_branch(feature)
+            dimension_features = self.dimension_branch(feature)
 
             # Dimension, orientation, offset, and depth predictions
-            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(feature))
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(dimension_features))
             orientation = self.orientation_head(orientation_features)
+            #print("Shape after orientation_head:", orientation.shape)
             depth = nn.functional.relu(self.depth_head(depth_features))
 
             N, _, H, W = dimensions_3d.shape
