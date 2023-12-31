@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 import dataset.kitti as kitti
 import dataset.waymo as waymo
 import model.fcos3d as fcos3d
-import metric.metric as metric
+import metric.metric_3d as metric
 
 
 from torchvision.models.detection import fcos
@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-#default_load_checkpoint = 'save_state_kitti_hpc_115.bin'
-default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_50.bin'
+#default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
 #default_load_checkpoint = None
 
-#default_output_image_path = 'output_kitti_hpc_115'
-default_output_image_path = 'output_waymo_hpc_29'
+default_output_image_path = 'output_kitti_50'
+#default_output_image_path = 'output_waymo_hpc_29'
 num_images = 5
 
 # Check if the directory exists
@@ -450,12 +450,12 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 # Perform inference on single image
                 detections = inference(model, image_path, dataset_name)
-                boxes, scores, labels, dimensions, orientation, offset, depth = detections
+                boxes, scores, labels, dimensions, orientation, depth = detections
 
                 print("detections", detections)
                 #print("orientation", detections)
                 original_image_path = image_paths[0]
-                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, orientation, offset, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
+                save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, orientation, depth, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
                 processed_images += 1
 
@@ -505,7 +505,7 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 # Print mAP for each threshold
                 print(f"Image: {image_path}")
-                print(f"  mAP: {map_values_by_threshold}")
+                print(f"  mAP: {map_values_by_threshold}\n\n")
 
         print(f"Completed inference on {processed_images} images.")
 

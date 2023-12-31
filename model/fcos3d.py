@@ -306,7 +306,7 @@ class FCOSRegressionHead(nn.Module):
 
         self.bbox_reg = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
         self.bbox_ctrness = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_ctrness]:
+        for layer in [self.bbox_reg, self.bbox_ctrness]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
 
