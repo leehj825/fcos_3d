@@ -52,7 +52,7 @@ class FCOSHead(nn.Module):
         self.box_coder = det_utils.BoxLinearCoder(normalize_by_size=True)
         self.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes, num_convs)
         self.regression_head = FCOSRegressionHead(in_channels, num_anchors, num_convs)
-        self.regression_3d_head = FCOSRegression3DHead(in_channels, num_anchors, 6)
+        #self.regression_3d_head = FCOSRegression3DHead(in_channels, num_anchors, 6)
 
     def compute_loss(
         self,
@@ -168,8 +168,13 @@ class FCOSHead(nn.Module):
         pred_dimensions_3d = dimensions_3d.squeeze(dim=2)
         pred_orientation = orientation.squeeze(dim=2)
 
+        #print("depth[foregroud_mask].squeeze(1).shape", depth[foregroud_mask].squeeze(1).shape)
+
+        #print("all_gt_depth_targets[foregroud_mask].shape", all_gt_depth_targets[foregroud_mask].shape)
+
         loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
         loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        #loss_depth = nn.functional.smooth_l1_loss(depth[foregroud_mask].squeeze(1), all_gt_depth_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
 
         # Assuming you have a minimum depth to avoid taking log of zero
@@ -193,8 +198,9 @@ class FCOSHead(nn.Module):
 
     def forward(self, x: List[Tensor]) -> Dict[str, Tensor]:
         cls_logits = self.classification_head(x)
-        bbox_regression, bbox_ctrness  = self.regression_head(x)
-        dimensions_3d, orientation, depth = self.regression_3d_head(x)
+        #bbox_regression, bbox_ctrness  = self.regression_head(x)
+        #dimensions_3d, orientation, depth = self.regression_3d_head(x)
+        bbox_regression, bbox_ctrness, dimensions_3d, orientation, depth  = self.regression_head(x)
         #print("regression_head dimensions_3d", dimensions_3d)
         #print("regression_head bbox_regression", bbox_regression)
         return {
@@ -306,23 +312,38 @@ class FCOSRegressionHead(nn.Module):
 
         self.bbox_reg = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
         self.bbox_ctrness = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-        for layer in [self.bbox_reg, self.bbox_ctrness]:
-            torch.nn.init.normal_(layer.weight, std=0.01)
-            torch.nn.init.zeros_(layer.bias)
 
-        for layer in self.conv.children():
-            if isinstance(layer, nn.Conv2d):
-                torch.nn.init.normal_(layer.weight, std=0.01)
-                torch.nn.init.zeros_(layer.bias)
+        # Heads for different tasks
+        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
+        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+
+        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+
+
+
+        # Initialize weights
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.normal_(m.weight, std=0.01)
+                torch.nn.init.zeros_(m.bias)
 
     def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor]:
         all_bbox_regression = []
         all_bbox_ctrness = []
+        all_dimensions_3d = []
+        all_orientation = []
+        all_depth = []
 
         for features in x:
             bbox_feature = self.conv(features)
             bbox_regression = nn.functional.relu(self.bbox_reg(bbox_feature))
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
+
+            # Dimension, orientation, offset, and depth predictions
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
+            orientation = self.orientation_head(bbox_feature)
+            #print("Shape after orientation_head:", orientation.shape)
+            depth = nn.functional.relu(self.depth_head(bbox_feature))
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -336,133 +357,6 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = bbox_ctrness.permute(0, 3, 4, 1, 2)
             bbox_ctrness = bbox_ctrness.reshape(N, -1, 1)
             all_bbox_ctrness.append(bbox_ctrness)
-
-        return (
-            torch.cat(all_bbox_regression, dim=1),
-            torch.cat(all_bbox_ctrness, dim=1)
-        )
-
-class SEBlock(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SEBlock, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
-
-class FCOSRegression3DHead(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        num_anchors: int,
-        num_convs: int = 6,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        enhanced_layers: int = 2,  # Additional layers for orientation and offset
-    ):
-        super().__init__()
-        if norm_layer is None:
-            norm_layer = partial(nn.GroupNorm, 32)
-
-        self.conv = nn.ModuleList()
-        for _ in range(num_convs):
-            conv_block = nn.Sequential(
-                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-                norm_layer(in_channels),
-                nn.LeakyReLU(),
-                SEBlock(in_channels)
-            )
-            self.conv.append(conv_block)
-
-        self.dimension_branch = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            SEBlock(in_channels),
-            *[
-                nn.Sequential(
-                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
-                    nn.LeakyReLU(),
-                    SEBlock(in_channels)
-                ) for _ in range(enhanced_layers)
-            ]
-        )
-
-        # Enhanced orientation branch with additional layers and attention mechanism
-        self.orientation_branch = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            SEBlock(in_channels),
-            *[
-                nn.Sequential(
-                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
-                    nn.LeakyReLU(),
-                    SEBlock(in_channels)
-                ) for _ in range(enhanced_layers)
-            ]
-        )
-
-        self.depth_branch = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            SEBlock(in_channels),
-            *[
-                nn.Sequential(
-                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-                    nn.LeakyReLU(),
-                    SEBlock(in_channels)
-                ) for _ in range(enhanced_layers)
-            ]
-        )
-
-        # Heads for different tasks
-        self.dimensions_3d_head = nn.Conv2d(in_channels, num_anchors * 3, kernel_size=3, stride=1, padding=1)
-        self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-
-        self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
-
-        # Initialize weights
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                torch.nn.init.normal_(m.weight, std=0.01)
-                torch.nn.init.zeros_(m.bias)
-
-    def _forward_impl(self, x: Tensor) -> Tensor:
-        identity = x
-        for conv_block in self.conv:
-            x = conv_block(x) + identity
-            identity = x
-        return x
-
-    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
-        all_dimensions_3d = []
-        all_orientation = []
-        all_depth = []
-
-        for features in x:
-            feature = self._forward_impl(features)
-
-            # Process through enhanced branches
-            orientation_features = self.orientation_branch(feature)
-            depth_features = self.depth_branch(feature)
-            dimension_features = self.dimension_branch(feature)
-
-            # Dimension, orientation, offset, and depth predictions
-            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(dimension_features))
-            orientation = self.orientation_head(orientation_features)
-            #print("Shape after orientation_head:", orientation.shape)
-            depth = nn.functional.relu(self.depth_head(depth_features))
-
-            N, _, H, W = dimensions_3d.shape
 
             # permute bbox ctrness output from (N, 3 * A, H, W) to (N, HWA, 3).
             dimensions_3d = dimensions_3d.view(N, -1, 3, H, W)
@@ -483,6 +377,8 @@ class FCOSRegression3DHead(nn.Module):
             all_depth.append(depth)
 
         return (
+            torch.cat(all_bbox_regression, dim=1),
+            torch.cat(all_bbox_ctrness, dim=1),
             torch.cat(all_dimensions_3d, dim=1),
             torch.cat(all_orientation, dim=1),
             torch.cat(all_depth, dim=1)
@@ -945,7 +841,7 @@ def fcos3d(
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
     trainable_backbone_layers: Optional[int] = None,
-    freeze_backbone: bool = False,  # Added parameter to control backbone freezing
+    freeze_backbone: bool = True,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:
     # Verify and load the backbone weights

@@ -24,20 +24,21 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000025.png'
-default_kitti_label_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
-default_kitti_calib_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
+#default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/scratch/cmpe249-fa23/kitti_od/"
+default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
+default_kitti_label_folder = 'data/kitti_200/training/label_2/'
+default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_data_path = "/scratch/cmpe249-fa23/waymo_data/waymo_all/kitti_format/"  # Update this path as per your Waymo dataset location
 default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
 default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.0001
-#default_load_checkpoint = 'save_state_kitti_40.bin'
+#default_load_checkpoint = '/home/001891254/fcos_3d/save_state_waymo_depth_hpc_30.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
@@ -410,7 +411,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()
-                }, f"./save_state_{dataset_name}_{epoch+1}.bin")
+                }, f"./save_state_{dataset_name}_sim_depth_hpc_{epoch+1}.bin")
 
     elif mode == 'inference':
         device = "cpu"
