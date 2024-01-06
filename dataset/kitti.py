@@ -88,7 +88,7 @@ class Kitti(VisionDataset):
         calib_dir = os.path.join(self.root, self._location, self.calib_dir_name)
         if self.train:
             labels_dir = os.path.join(self.root, self._location, self.labels_dir_name)
-        for img_file in os.listdir(image_dir):
+        for img_file in sorted(os.listdir(image_dir)):
             self.images.append(os.path.join(image_dir, img_file))
             self.calibrations.append(os.path.join(calib_dir, f"{img_file.split('.')[0]}.txt"))
             if self.train:

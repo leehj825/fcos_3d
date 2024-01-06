@@ -172,8 +172,8 @@ class FCOSHead(nn.Module):
 
         #print("all_gt_depth_targets[foregroud_mask].shape", all_gt_depth_targets[foregroud_mask].shape)
 
-        loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
-        loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_depth = nn.functional.smooth_l1_loss(depth[foregroud_mask].squeeze(1), all_gt_depth_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
 
@@ -318,16 +318,17 @@ class FCOSRegressionHead(nn.Module):
         self.orientation_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
 
         self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
+		
+        for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.depth_head]:
+            torch.nn.init.normal_(layer.weight, std=0.01)
+            torch.nn.init.zeros_(layer.bias)
 
+        for layer in self.conv.children():
+            if isinstance(layer, nn.Conv2d):
+                torch.nn.init.normal_(layer.weight, std=0.01)
+                torch.nn.init.zeros_(layer.bias)
 
-
-        # Initialize weights
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                torch.nn.init.normal_(m.weight, std=0.01)
-                torch.nn.init.zeros_(m.bias)
-
-    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor]:
+    def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         all_bbox_regression = []
         all_bbox_ctrness = []
         all_dimensions_3d = []
@@ -340,10 +341,10 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
 
             # Dimension, orientation, offset, and depth predictions
-            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
+            dimensions_3d = self.dimensions_3d_head(bbox_feature)
             orientation = self.orientation_head(bbox_feature)
             #print("Shape after orientation_head:", orientation.shape)
-            depth = nn.functional.relu(self.depth_head(bbox_feature))
+            depth = self.depth_head(bbox_feature)
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
@@ -841,7 +842,7 @@ def fcos3d(
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
     trainable_backbone_layers: Optional[int] = None,
-    freeze_backbone: bool = True,  # Added parameter to control backbone freezing
+    freeze_backbone: bool = False,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:
     # Verify and load the backbone weights

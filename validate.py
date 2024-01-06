@@ -48,7 +48,7 @@ default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
 default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
 default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_50.bin'
-#default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_sim_depth_hpc_310.bin'
+#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_sim_depth_hpc_40.bin'
 #default_load_checkpoint = None
 
-default_output_image_path = 'output_kitti_50'
-#default_output_image_path = 'output_waymo_hpc_29'
+default_output_image_path = 'output_kitti_sim_depth_hpc_310'
+#default_output_image_path = 'output_waymo_sim_depth_hpc_40'
 num_images = 5
 
 # Check if the directory exists
