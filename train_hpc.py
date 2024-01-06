@@ -274,7 +274,7 @@ def save_combined_image(dataset_name, boxes, scores, labels, dimensions, locatio
     # Save the combined image
     combined_image.save(output_image_path)
 
-def main(mode='train', dataset_name='kitti', image_path=None, load=None):
+def main(mode='train', dataset_name='waymo', image_path=None, load=None):
     # Main function to handle training and inference
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -406,7 +406,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
             scheduler.step(loss_value)
 
             # Save checkpoint
-            if (epoch+1) % 10 == 0:
+            if (epoch+1) % 5 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
@@ -437,8 +437,8 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'inference'], help='Mode to run the script in')
-    parser.add_argument('--dataset', type=str, default='kitti', choices=['kitti', 'waymo'], help='Dataset to use')
-    parser.add_argument('--image_path', default=default_kitti_image_path, type=str, help='Path to the image for inference mode')
+    parser.add_argument('--dataset', type=str, default='waymo', choices=['kitti', 'waymo'], help='Dataset to use')
+    parser.add_argument('--image_path', default=default_waymo_image_path, type=str, help='Path to the image for inference mode')
     parser.add_argument('--load', default=default_load_checkpoint, type=str, help='Path to the pretrained model file')
     args = parser.parse_args()
     main(mode=args.mode, dataset_name=args.dataset, image_path=args.image_path, load=args.load)

@@ -172,8 +172,8 @@ class FCOSHead(nn.Module):
 
         #print("all_gt_depth_targets[foregroud_mask].shape", all_gt_depth_targets[foregroud_mask].shape)
 
-        loss_dimensions_3d = nn.functional.l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
-        loss_orientation = nn.functional.l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
+        loss_dimensions_3d = nn.functional.smooth_l1_loss(pred_dimensions_3d[foregroud_mask], all_gt_dimensions_targets[foregroud_mask], reduction="sum")
+        loss_orientation = nn.functional.smooth_l1_loss(pred_orientation[foregroud_mask], all_gt_orientation_targets[foregroud_mask], reduction="sum")
         #loss_depth = nn.functional.smooth_l1_loss(depth[foregroud_mask].squeeze(1), all_gt_depth_targets[foregroud_mask], reduction="sum")
         #loss_location_3d = nn.functional.l1_loss(pred_location_3d[foregroud_mask], all_gt_location_targets[foregroud_mask], reduction="sum")
 
@@ -341,10 +341,10 @@ class FCOSRegressionHead(nn.Module):
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
 
             # Dimension, orientation, offset, and depth predictions
-            dimensions_3d = self.dimensions_3d_head(bbox_feature)
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
             orientation = self.orientation_head(bbox_feature)
             #print("Shape after orientation_head:", orientation.shape)
-            depth = self.depth_head(bbox_feature)
+            depth = nn.functional.relu(self.depth_head(bbox_feature))
 
             # permute bbox regression output from (N, 4 * A, H, W) to (N, HWA, 4).
             N, _, H, W = bbox_regression.shape
