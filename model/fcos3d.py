@@ -276,7 +276,23 @@ class FCOSClassificationHead(nn.Module):
 
         return torch.cat(all_cls_logits, dim=1)
 
+class SEBlock(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
 
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+	
 class FCOSRegressionHead(nn.Module):
     """
     A regression head for use in FCOS, which combines regression branch and center-ness branch.
@@ -297,6 +313,7 @@ class FCOSRegressionHead(nn.Module):
         num_anchors: int,
         num_convs: int = 4,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
+        enhanced_layers: int = 2,  # Additional layers for orientation and offset
     ):
         super().__init__()
 
@@ -319,14 +336,57 @@ class FCOSRegressionHead(nn.Module):
 
         self.depth_head = nn.Conv2d(in_channels, num_anchors * 1, kernel_size=3, stride=1, padding=1)
 		
+		
+		# Enhanced orientation branch with additional layers and attention mechanism
+        self.orientation_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+
+
+        self.dimension_branch = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            SEBlock(in_channels),
+            *[
+                nn.Sequential(
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(in_channels),  # Adding BatchNorm
+                    nn.LeakyReLU(),
+                    SEBlock(in_channels)
+                ) for _ in range(enhanced_layers)
+            ]
+        )
+		
         for layer in [self.bbox_reg, self.bbox_ctrness, self.dimensions_3d_head, self.orientation_head, self.depth_head]:
             torch.nn.init.normal_(layer.weight, std=0.01)
             torch.nn.init.zeros_(layer.bias)
+        
+        for layer in [self.orientation_branch, self.dimension_branch]:
+            if isinstance(layer, nn.Conv2d):
+                torch.nn.init.normal_(layer.weight, std=0.01)
+                torch.nn.init.zeros_(layer.bias)
 
         for layer in self.conv.children():
             if isinstance(layer, nn.Conv2d):
                 torch.nn.init.normal_(layer.weight, std=0.01)
                 torch.nn.init.zeros_(layer.bias)
+		
+    def _forward_impl(self, x: Tensor) -> Tensor:
+        identity = x
+        for conv_block in self.conv:
+            x = conv_block(x) + identity
+            identity = x
+        return x
 
     def forward(self, x: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         all_bbox_regression = []
@@ -336,13 +396,21 @@ class FCOSRegressionHead(nn.Module):
         all_depth = []
 
         for features in x:
+            res_feature = self._forward_impl(features)
+            orientation_features = self.orientation_branch(res_feature)
+            orientation = self.orientation_head(orientation_features)
+
+
+            dimension_features = self.dimension_branch(res_feature)
+            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(dimension_features))
+
             bbox_feature = self.conv(features)
             bbox_regression = nn.functional.relu(self.bbox_reg(bbox_feature))
             bbox_ctrness = self.bbox_ctrness(bbox_feature)
 
             # Dimension, orientation, offset, and depth predictions
-            dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
-            orientation = self.orientation_head(bbox_feature)
+            #dimensions_3d = nn.functional.relu(self.dimensions_3d_head(bbox_feature))
+            #orientation = self.orientation_head(bbox_feature)
             #print("Shape after orientation_head:", orientation.shape)
             depth = nn.functional.relu(self.depth_head(bbox_feature))
 

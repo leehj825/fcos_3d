@@ -36,7 +36,7 @@ default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
-default_learning_rate = 0.001
+default_learning_rate = 0.0001
 #default_load_checkpoint = 'save_state_kitti_40.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'

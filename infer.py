@@ -57,12 +57,12 @@ default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_sim_depth_hpc_310.bin'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_sim_depth_hpc_50.bin'
+#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_20.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_40.bin'
 #default_load_checkpoint = None
 
-#default_output_image_path = 'output_kitti_sim_depth_hpc_310'
-default_output_image_path = 'output_waymo_sim_depth_hpc_50'
+#default_output_image_path = 'output_kitti_20'
+default_output_image_path = 'save_state_waymo_40'
 num_images = 20
 
 # Check if the directory exists
