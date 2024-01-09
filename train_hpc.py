@@ -24,20 +24,21 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
-default_kitti_image_path = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000025.png'
-default_kitti_label_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
-default_kitti_calib_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
+#default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/scratch/cmpe249-fa23/kitti_od/"
+default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
+default_kitti_label_folder = 'data/kitti_200/training/label_2/'
+default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/calib/'
+default_waymo_data_path = "/scratch/cmpe249-fa23/waymo_data/waymo_all/kitti_format/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = 'data/waymo_single/training/label_0/'
+default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.0001
-#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_20.bin'
+#default_load_checkpoint = '/home/001891254/fcos_3d/save_state_waymo_depth_hpc_30.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
@@ -154,7 +155,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
     
 
     # Define a data loader
-    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
+    data_loader = DataLoader(dataset, batch_size=2, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
     #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
     num_epochs = 500
@@ -211,7 +212,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
                                 dimensions_3d.append(target["dimensions"])  # [height, width, length]
                                 location_xy.append([target["location"][0], target["location"][1]])  # [x, y]
                                 orientations_y.append(target["rotation_y"]) # rotation y
-                                depth.append(target["location"][2])         # [z]
+                                depth.append(target["location"][2])
 
                     # Only proceed if there are valid targets
                     if boxes:
@@ -238,7 +239,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
                 
                 # Print every 5 batches
-                if (batch_idx + 1) % 1 == 0:
+                if (batch_idx + 1) % 10 == 0:
                     for loss_name, loss_value in loss_dict.items():
                         loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 
@@ -257,7 +258,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
             scheduler.step(loss_value)
 
             # Save checkpoint
-            if (epoch+1) % 1 == 0:
+            if (epoch+1) % 5 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),

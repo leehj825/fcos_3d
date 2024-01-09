@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 import dataset.kitti as kitti
 import dataset.waymo as waymo
 import model.fcos3d as fcos3d
-import metric.metric as metric
+import metric.metric_3d as metric
 
 
 from torchvision.models.detection import fcos
@@ -42,27 +42,27 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
-default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
-default_kitti_label_folder = 'data/kitti_200/training/label_2/'
-default_kitti_calib_folder = 'data/kitti_200/training/calib/'
+default_kitti_data_path = "/Users/hyejunlee/fcos_3d/data/kitti_200/"
+default_kitti_image_path = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/image_2/000025.png'
+default_kitti_label_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/label_2/'
+default_kitti_calib_folder = '/Users/hyejunlee/fcos_3d/data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "data/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = 'data/waymo_single/training/label_0/'
-default_waymo_calib_folder = 'data/waymo_single/training/calib/'
+default_waymo_data_path = "/Users/hyejunlee/fcos_3d/data/waymo_single/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/label_0/'
+default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
-#default_load_checkpoint = 'save_state_kitti_hpc_115.bin'
-default_load_checkpoint = 'save_state_waymo_hpc_29.bin'
+#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_20.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_20.bin'
 #default_load_checkpoint = None
 
-#default_output_image_path = 'output_kitti_hpc_115'
-default_output_image_path = 'output_waymo_hpc_29'
+#default_output_image_path = 'output_kitti_20'
+default_output_image_path = 'save_state_waymo_20_val'
 num_images = 5
 
 # Check if the directory exists
@@ -144,11 +144,12 @@ def inference(model, image_path, dataset_name):
             scores = pred['scores']
             labels = pred['labels']
             dimensions = pred['dimensions_3d']
-            locations = pred['locations_3d']
+            locations = pred['location_xy']
             orientation = pred['orientation']
+            depth = pred['depth']
         else:
-            boxes, scores, labels, dimensions, locations, orientation = [], [], [], [], [], []
-    return boxes, scores, labels, dimensions, locations, orientation
+            boxes, scores, labels, dimensions, locations, orientation, depth = [], [], [], [], [], [], []
+    return boxes, scores, labels, dimensions, locations, orientation, depth
 
 
 def project_to_image(pts_3d, P):
@@ -168,7 +169,7 @@ def draw_3d_box(draw, corners_2d, color="red"):
     ]
     # Draw each edge
     for i, j in edges:
-        draw.line([tuple(corners_2d[i]), tuple(corners_2d[j])], fill=color, width=2)
+        draw.line([tuple(corners_2d[i]), tuple(corners_2d[j])], fill=color, width=5)
 
 
 def create_3d_bbox(dimensions, location, rotation_y):
@@ -325,7 +326,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
-    for box, score, label, dimension, location, orientation in zip(boxes, scores, labels, dimensions, locations, orientation):
+    for box, score, label, dimension, location, orientation, depth in zip(boxes, scores, labels, dimensions, locations, orientation, depth):
         if score > 0.5:  # Threshold can be adjusted
             #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
@@ -409,14 +410,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             print(f"Loading checkpoint: {load}")
             checkpoint = torch.load(load)
             model.load_state_dict(checkpoint['model_state_dict'])
-            start_epoch = checkpoint['epoch']
-
-            # If optimizer and scheduler states were saved, load them
-            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-            if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         except RuntimeError as e:
             print(f"Error loading checkpoint: {e}")
 
@@ -424,14 +417,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
             try:
                 checkpoint = torch.load(load, map_location=torch.device('cpu'))
                 model.load_state_dict(checkpoint['model_state_dict'])
-                start_epoch = checkpoint['epoch']
-
-                # If optimizer and scheduler states were saved, load them
-                if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             except RuntimeError as e:
                 print(f"Error loading checkpoint with map_location: {e}")
 
@@ -440,14 +425,6 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
                 try:
                     checkpoint = torch.load(load, pickle_module=pickle, encoding='utf-8')
                     model.load_state_dict(checkpoint['model_state_dict'])
-                    start_epoch = checkpoint['epoch']
-
-                    # If optimizer and scheduler states were saved, load them
-                    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-                    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-                        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
                 except RuntimeError as e:
                     print(f"Error loading checkpoint with pickle_module: {e}")
                     # If this fails, the file might be corrupted or not a valid checkpoint
@@ -474,12 +451,14 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 # Perform inference on single image
                 detections = inference(model, image_path, dataset_name)
-                boxes, scores, labels, dimensions, locations, rotations = detections
+                boxes, scores, labels, dimensions, locations, rotations, depth = detections
 
-                #print(detections)
+                print("detections", detections)
+                #print("orientation", detections)
                 original_image_path = image_paths[0]
                 save_combined_image(dataset_name, calib_data[idx], boxes, scores, labels, dimensions, locations, rotations, original_image_path, f"{default_output_image_path}/output_{batch_idx}.png")
 
+                processed_images += 1
 
                 # Convert detections to the required format
                 for i in range(len(boxes)):
@@ -524,10 +503,7 @@ def main(mode='inference', dataset_name='waymo', image_path=None, load=None):
 
                 # Print mAP for each threshold
                 print(f"Image: {image_path}")
-                print(f"  mAP: {map_values_by_threshold}")
-
-
-                processed_images += 1
+                print(f"  mAP: {map_values_by_threshold}\n\n")
 
         print(f"Completed inference on {processed_images} images.")
 
