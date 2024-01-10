@@ -37,7 +37,7 @@ default_waymo_calib_folder = '/Users/hyejunlee/fcos_3d/data/waymo_single/trainin
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.0001
-#default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_waymo_20.bin'
+#default_load_checkpoint = '/Users/hyejunlee/fcos_3d_temp/save_state_waymo_location_25.bin'
 default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
@@ -262,7 +262,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()
-                }, f"./save_state_{dataset_name}_location_{epoch+1}.bin")
+                }, f"./save_state_{dataset_name}_location_2_{epoch+1}.bin")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='FCOS Training/Inference')

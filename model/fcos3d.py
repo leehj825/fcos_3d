@@ -926,7 +926,7 @@ def fcos3d(
     progress: bool = True,
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
-    trainable_backbone_layers: Optional[int] = None,
+    trainable_backbone_layers: Optional[int] = 1,
     freeze_backbone: bool = False,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:

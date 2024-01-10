@@ -58,11 +58,11 @@ default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
 #default_load_checkpoint = '/Users/hyejunlee/fcos_3d/save_state_kitti_20.bin'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d_temp/save_state_waymo_location_7.bin'
+default_load_checkpoint = '/Users/hyejunlee/fcos_3d_temp/save_state_waymo_location_24.bin'
 #default_load_checkpoint = None
 
 #default_output_image_path = 'output_kitti_20'
-default_output_image_path = 'output_waymo_location_7'
+default_output_image_path = 'output_waymo_location_24'
 num_images = 20
 
 # Check if the directory exists
@@ -274,7 +274,13 @@ def generate_gif(folder_path, output_gif_path):
     # Save the images as a GIF
     images[0].save(output_gif_path, save_all=True, append_images=images[1:], optimize=False, duration=200, loop=0)
 
-# Rest of the functions (project_to_image, draw_3d_box) remain the same as in the previous example
+
+def get_color_for_label(label):
+    # List of colors
+    colors = ['blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'gray', 'brown', 'cyan']
+    
+    # Use modulo to avoid index out of range
+    return colors[label % len(colors)]
 
 def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensions, locations, orientation, depth, image_path, output_image_path):
 
@@ -295,12 +301,16 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
 
             #print("(location[0], location[1], depth)", (location[0], location[1], depth))
             corners_3d = create_3d_bbox(dimension, torch.stack((location[0], location[1], depth.squeeze()), dim=0), orientation)
-            #print("box", box)
+            #corners_3d = create_3d_bbox_2d(dimension, box, depth, orientation, P)
+			#print("box", box)
             #print("corners_3d", corners_3d)
             corners_2d = project_to_image(corners_3d.T, P)
             #print("corners_2d", corners_2d)
             #draw_3d_box(draw_pred, corners_2d, color="green")
-            draw_3d_box(draw_pred, corners_2d, color="green")
+            #print("label", label)
+            box_color = get_color_for_label(label.item())  # Get color based on the label
+            
+            draw_3d_box(draw_pred, corners_2d, color=box_color)
     
     # Save the combined image
     #image.save(output_image_path)

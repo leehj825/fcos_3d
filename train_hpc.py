@@ -155,7 +155,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
     
 
     # Define a data loader
-    data_loader = DataLoader(dataset, batch_size=2, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
+    data_loader = DataLoader(dataset, batch_size=4, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
     #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
     num_epochs = 500
