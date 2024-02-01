@@ -462,8 +462,8 @@ class FCOS(nn.Module):
         backbone: nn.Module,
         num_classes: int,
         # transform parameters
-        min_size: int = 800,
-        max_size: int = 1333,
+        min_size: int = 1280,
+        max_size: int = 1920,
         image_mean: Optional[List[float]] = None,
         image_std: Optional[List[float]] = None,
         # Anchor parameters

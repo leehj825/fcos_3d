@@ -36,9 +36,9 @@ default_waymo_label_folder = 'data/waymo_single/training/label_0/'
 default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
-default_learning_rate = 0.001
-#default_load_checkpoint = 'save_state_4.bin'
-default_load_checkpoint = None
+default_learning_rate = 0.0001
+default_load_checkpoint = 'save_state_waymo_5.bin'
+#default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -276,7 +276,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
     # Construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=default_learning_rate, weight_decay=0.0005)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=1, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=1)
 
     model.zero_grad()
 
@@ -306,6 +306,10 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
     if mode == 'train':
         # Training loop
         for epoch in range(start_epoch, num_epochs):
+            
+            total_loss = 0.0  # Initialize total loss for the epoch
+            num_batches = 0  # Count the number of batches processed
+
             #for batch_idx, (images, targets, calib_data, image_paths) in enumerate(data_loader):
             for batch_idx, batch_data in enumerate(data_loader):
                 if batch_data is None:
@@ -365,7 +369,7 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
                 loss_info = f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(data_loader)}, "
                 
                 # Print every 5 batches
-                if (batch_idx + 1) % 5 == 0:
+                if (batch_idx + 1) % 1 == 0:
                     for loss_name, loss_value in loss_dict.items():
                         loss_info += f"{loss_name}: {'{:.3f}'.format(loss_value.item())}, "
 
@@ -373,18 +377,28 @@ def main(mode='train', dataset_name='kitti', image_path=None, load=None):
 
                 losses = sum(loss for loss in loss_dict.values())
                 loss_value = losses.item()
+                
+                total_loss += loss_value  # Accumulate the loss from each batch
+                num_batches += 1  # Increment the batch count
 
                 # Backward pass
                 optimizer.zero_grad()
                 losses.backward()
                 optimizer.step()
 
-            print(f"Epoch {epoch+1} of {num_epochs}, Loss: {loss_value}")
             # Update the learning rate scheduler
             scheduler.step(loss_value)
+            # Optionally, log the current learning rate
+            current_lr = scheduler.optimizer.param_groups[0]['lr']
+            #print(f"Epoch {epoch+1}: Current learning rate: {current_lr}")
+
+            #print(f"Epoch {epoch+1} of {num_epochs}, Loss: {loss_value}")
+            avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+            print(f"Epoch {epoch+1} of {num_epochs}, Learning Rate: {current_lr}, Avg Loss: {avg_loss:.4f}")
+
 
             # Save checkpoint
-            if (epoch+1) % 10 == 0:
+            if (epoch+1) % 1 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),
