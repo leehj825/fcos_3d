@@ -42,28 +42,28 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/scratch/cmpe249-fa23/kitti_od/"
 default_kitti_image_path = '/scratch/cmpe249-fa23/kitti_od/training/image_2/000025.png'
 default_kitti_label_folder = '/scratch/cmpe249-fa23/kitti_od/training/label_2/'
 default_kitti_calib_folder = '/scratch/cmpe249-fa23/kitti_od/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/Users/hyejunlee/waymo_single/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/waymo_single/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/waymo_single/training/calib/'
+default_waymo_data_path = "/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/label_0/'
+default_waymo_calib_folder = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
 default_image_path ='data/kitti_200/training/image_2/000005.png'
 #default_load_checkpoint = '/home/001891254/fcos_3d/save_state_kitti_sim_depth_hpc_290.bin'
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d_new_depth/save_state_waymo_new_depth_15.bin'
+default_load_checkpoint = '/home/001891254/fcos_3d_new_depth/save_state_waymo_new_depth_30.bin'
 #default_load_checkpoint = 'save_state_waymo_40.bin'
 #default_load_checkpoint = None
 
 #default_output_image_path = 'output_kitti_sim_depth_hpc_290'
-default_output_image_path = 'output_waymo_hpc_15'
+default_output_image_path = 'output_waymo_hpc_30'
 #default_output_image_path = 'output_waymo_30'
 num_images = 2
 
@@ -72,7 +72,7 @@ if not os.path.exists(default_output_image_path):
     os.makedirs(default_output_image_path)  # Create the directory if it does not exist
 
 # Detect device
-#device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 device = "cpu"
 print(device)
 
@@ -333,14 +333,14 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #draw.rectangle(bbox, outline="yellow")
             if bbox[2] > bbox[0] and bbox[3] > bbox[1]:  # Ensures width and height are positive
                 print("bbox, dimension_3d, location_3d, rotation_y", bbox, dimension_3d, location_3d, rotation_y)
-                #draw_3d_box(draw_gt, corners_2d)
+                draw_3d_box(draw_gt, corners_2d)
 
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, orientation_angle, depth in zip(boxes, scores, labels, dimensions, orientation_angle, depth):
         if score > 0.5:  # Threshold can be adjusted
-            draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+            #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box

@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision.models.resnet import ResNet101_Weights
 
 import numpy as np
-from torch.utils.data.sampler import SubsetRandomSampler
+
 
 # Set environment variable for MPS (if using Apple Silicon)
 os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
@@ -24,21 +24,22 @@ os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
 CLASS_MAPPING = {"Car": 0, "Pedestrian": 1, "Cyclist": 2}
 
 # Default paths and parameters for KITTI dataset
-default_kitti_data_path = "data/kitti_200/"
+#default_kitti_data_path = "data/kitti_200/"
+default_kitti_data_path = "/scratch/cmpe249-fa23/kitti_od/"
 default_kitti_image_path = 'data/kitti_200/training/image_2/000025.png'
 default_kitti_label_folder = 'data/kitti_200/training/label_2/'
 default_kitti_calib_folder = 'data/kitti_200/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/Users/hyejunlee/waymo_3/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/Users/hyejunlee/waymo_3/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/Users/hyejunlee/waymo_3/training/label_0/'
-default_waymo_calib_folder = '/Users/hyejunlee/waymo_3/training/calib/'
+default_waymo_data_path = "/scratch/cmpe249-fa23/waymo_data/waymo_0000/kitti_format/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = 'data/waymo_single/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = 'data/waymo_single/training/label_0/'
+default_waymo_calib_folder = 'data/waymo_single/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.0001
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d_new_depth/save_state_waymo_new_depth_6.bin'
-#default_load_checkpoint = None
+#default_load_checkpoint = '/home/001891254/fcos_3d/save_state_waymo_depth_hpc_30.bin'
+default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -150,21 +151,9 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
     
-    # Step 1: Determine the number of images you want to load
-    num_images_to_load = 100  # For example, load 100 images randomly
-
-    # Step 2: Generate random indices
-    dataset_size = len(dataset)  # Assuming 'dataset' is your dataset object
-    indices = list(range(dataset_size))
-    np.random.shuffle(indices)
-    subset_indices = indices[:num_images_to_load]
-
-    # Step 3: Create a SubsetRandomSampler instance
-    sampler = SubsetRandomSampler(subset_indices)
 
     # Define a data loader
-    #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
-    data_loader = DataLoader(dataset, batch_size=1, sampler=sampler, collate_fn=lambda batch: custom_collate(batch, dataset_name))
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda batch: custom_collate(batch, dataset_name))
     #data_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=custom_collate)
 
     num_epochs = 500
@@ -186,19 +175,6 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
 
         # Training loop
         for epoch in range(start_epoch, num_epochs):
-
-            # Generate new random indices for the current epoch
-            dataset_size = len(dataset)  # Assuming 'dataset' is your dataset object
-            indices = list(range(dataset_size))
-            np.random.shuffle(indices)
-            subset_indices = indices[:num_images_to_load]
-
-            # Create a new SubsetRandomSampler for the current epoch
-            sampler = SubsetRandomSampler(subset_indices)
-
-            # Create a new DataLoader with the sampler for the current epoch
-            data_loader = DataLoader(dataset, batch_size=1, sampler=sampler, collate_fn=lambda batch: custom_collate(batch, dataset_name))
-
             
             total_loss = 0.0  # Initialize total loss for the epoch
             num_batches = 0  # Count the number of batches processed
@@ -291,7 +267,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
 
 
             # Save checkpoint
-            if (epoch+1) % 1 == 0:
+            if (epoch+1) % 5 == 0:
                 torch.save({
                     'epoch': epoch+1,
                     'model_state_dict': model.state_dict(),

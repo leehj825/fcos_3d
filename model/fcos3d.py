@@ -78,11 +78,12 @@ class FCOSHead(nn.Module):
 
         for targets_per_image, matched_idxs_per_image in zip(targets, matched_idxs):
             if len(targets_per_image["labels"]) == 0:
-                gt_classes_targets = targets_per_image["labels"].new_zeros((len(matched_idxs_per_image),))
-                gt_boxes_targets = targets_per_image["boxes"].new_zeros((len(matched_idxs_per_image), 4))
-                gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
-                gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
-                gt_depth_targets = targets_per_image["depth"].new_zeros((len(matched_idxs_per_image), 1))
+                continue #skip if empty
+                #gt_classes_targets = targets_per_image["labels"].new_zeros((len(matched_idxs_per_image),))
+                #gt_boxes_targets = targets_per_image["boxes"].new_zeros((len(matched_idxs_per_image), 4))
+                #gt_dimensions_targets = targets_per_image["dimensions_3d"].new_zeros((len(matched_idxs_per_image), 3))  # Assuming 3D dimensions
+                #gt_orientation_targets = targets_per_image["orientations_y"].new_zeros((len(matched_idxs_per_image), 1)) # Assuming quaternion or similar representation
+                #gt_depth_targets = targets_per_image["depth"].new_zeros((len(matched_idxs_per_image), 1))
             else:
                 gt_classes_targets = targets_per_image["labels"][matched_idxs_per_image.clip(min=0)]
                 gt_boxes_targets = targets_per_image["boxes"][matched_idxs_per_image.clip(min=0)]
@@ -97,6 +98,17 @@ class FCOSHead(nn.Module):
             all_gt_orientation_targets.append(gt_orientation_targets)
             all_gt_depth_targets.append(gt_depth_targets)
 
+        # Handle cases where all targets might be empty
+        if not all_gt_classes_targets:
+            return {
+                "classification": torch.tensor(0, device=cls_logits.device, dtype=torch.float32),
+                "bbox_regression": torch.tensor(0, device=cls_logits.device, dtype=torch.float32),
+                "bbox_ctrness": torch.tensor(0, device=cls_logits.device, dtype=torch.float32),
+                "dimensions_3d": torch.tensor(0, device=cls_logits.device, dtype=torch.float32),
+                "orientation": torch.tensor(0, device=cls_logits.device, dtype=torch.float32),
+                "depth": torch.tensor(0, device=cls_logits.device, dtype=torch.float32)
+            }
+        
         # List[Tensor] to Tensor conversion
         all_gt_boxes_targets, all_gt_classes_targets, all_gt_dimensions_targets, all_gt_orientation_targets, all_gt_depth_targets, anchors = (
             torch.stack(all_gt_boxes_targets),
@@ -585,8 +597,8 @@ class FCOS(nn.Module):
         backbone: nn.Module,
         num_classes: int,
         # transform parameters
-        min_size: int = 800,
-        max_size: int = 1333,
+        min_size: int = 1280,
+        max_size: int = 1920,
         image_mean: Optional[List[float]] = None,
         image_std: Optional[List[float]] = None,
         # Anchor parameters
@@ -944,7 +956,7 @@ def fcos3d(
     progress: bool = True,
     num_classes: Optional[int] = None,
     weights_backbone: Optional[ResNet101_Weights] = ResNet101_Weights.IMAGENET1K_V1,
-    trainable_backbone_layers: Optional[int] = None,
+    trainable_backbone_layers: Optional[int] = 1,
     freeze_backbone: bool = False,  # Added parameter to control backbone freezing
     **kwargs: Any,
 ) -> FCOS:
