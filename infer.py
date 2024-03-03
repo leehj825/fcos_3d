@@ -142,17 +142,17 @@ def inference(model, image_path, dataset_name):
             scores = pred['scores']
             labels = pred['labels']
             dimensions = pred['dimensions_3d']
-            #orientation = pred['orientation']
+            orientation = pred['orientation']
             # Extract sine and cosine values for orientation
-            orientation_sin = torch.sin(pred['orientation'][:, 0])  # Assuming the first channel is sine
-            orientation_cos = torch.cos(pred['orientation'][:, 1])  # Assuming the second channel is cosine
+            #orientation_sin = torch.sin(pred['orientation'][:, 0])  # Assuming the first channel is sine
+            #orientation_cos = torch.cos(pred['orientation'][:, 1])  # Assuming the second channel is cosine
             # Optionally convert sine and cosine back to angle
-            orientation_angle = torch.atan2(orientation_sin, orientation_cos)  # Resulting angle in radians
+            #orientation_angle = torch.atan2(orientation_sin, orientation_cos)  # Resulting angle in radians
 
             depth = pred['depth']
         else:
-            boxes, scores, labels, dimensions, orientation_angle, depth = [], [], [], [], [], [], []
-    return boxes, scores, labels, dimensions, orientation_angle, depth
+            boxes, scores, labels, dimensions, orientation, depth = [], [], [], [], [], [], []
+    return boxes, scores, labels, dimensions, orientation, depth
 
 
 def project_to_image(pts_3d, P):
@@ -333,14 +333,14 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
             #draw.rectangle(bbox, outline="yellow")
             if bbox[2] > bbox[0] and bbox[3] > bbox[1]:  # Ensures width and height are positive
                 print("bbox, dimension_3d, location_3d, rotation_y", bbox, dimension_3d, location_3d, rotation_y)
-                #draw_3d_box(draw_gt, corners_2d)
+                draw_3d_box(draw_gt, corners_2d)
 
     # Draw prediction bounding boxes in green
     #for box, score, label in zip(boxes, scores, labels):
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, orientation_angle, depth in zip(boxes, scores, labels, dimensions, orientation_angle, depth):
         if score > 0.5:  # Threshold can be adjusted
-            draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+            #draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box

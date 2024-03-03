@@ -48,22 +48,22 @@ default_kitti_label_folder = '/scratch/cmpe249-fa23/kitti_od/training/label_2/'
 default_kitti_calib_folder = '/scratch/cmpe249-fa23/kitti_od/training/calib/'
 
 # Default paths and parameters for Waymo dataset
-default_waymo_data_path = "/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/"  # Update this path as per your Waymo dataset location
-default_waymo_image_path = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/image_0/0000001.jpg'  # Update with a Waymo image path
-default_waymo_label_folder = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/label_0/'
-default_waymo_calib_folder = '/scratch/cmpe249-fa23/waymo_data/waymo_single/kitti_format/training/calib/'
+default_waymo_data_path = "/scratch/cmpe295-wu/hj/waymo_data/waymo_1_4_0/kitti_format/"  # Update this path as per your Waymo dataset location
+default_waymo_image_path = '/scratch/cmpe295-wu/hj/waymo_data/waymo_1_4_0/kitti_format/training/image_0/0000001.jpg'  # Update with a Waymo image path
+default_waymo_label_folder = '/scratch/cmpe295-wu/hj/waymo_data/waymo_1_4_0/kitti_format/training/label_0/'
+default_waymo_calib_folder = '/scratch/cmpe295-wu/hj/waymo_data/waymo_1_4_0/kitti_format/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.001
 
-default_image_path ='data/kitti_200/training/image_2/000005.png'
+default_image_path ='/scratch/cmpe295-wu/hj/waymo_data/waymo_1_4_0/kitti_format/training/image_2/000005.png'
 #default_load_checkpoint = '/home/001891254/fcos_3d/save_state_kitti_sim_depth_hpc_290.bin'
-default_load_checkpoint = '/home/001891254/fcos_3d_new_depth/save_state_waymo_new_depth_30.bin'
+default_load_checkpoint = '/home/001891254/fcos_3d_new_depth/save_state_waymo_new_depth_10.bin'
 #default_load_checkpoint = 'save_state_waymo_40.bin'
 #default_load_checkpoint = None
 
 #default_output_image_path = 'output_kitti_sim_depth_hpc_290'
-default_output_image_path = 'output_waymo_hpc_30'
+default_output_image_path = 'output_waymo_hpc_10'
 #default_output_image_path = 'output_waymo_30'
 num_images = 2
 
@@ -142,17 +142,17 @@ def inference(model, image_path, dataset_name):
             scores = pred['scores']
             labels = pred['labels']
             dimensions = pred['dimensions_3d']
-            #orientation = pred['orientation']
+            orientation = pred['orientation']
             # Extract sine and cosine values for orientation
-            orientation_sin = torch.sin(pred['orientation'][:, 0])  # Assuming the first channel is sine
-            orientation_cos = torch.cos(pred['orientation'][:, 1])  # Assuming the second channel is cosine
+            #orientation_sin = torch.sin(pred['orientation'][:, 0])  # Assuming the first channel is sine
+            #orientation_cos = torch.cos(pred['orientation'][:, 1])  # Assuming the second channel is cosine
             # Optionally convert sine and cosine back to angle
-            orientation_angle = torch.atan2(orientation_sin, orientation_cos)  # Resulting angle in radians
+            #orientation_angle = torch.atan2(orientation_sin, orientation_cos)  # Resulting angle in radians
 
             depth = pred['depth']
         else:
-            boxes, scores, labels, dimensions, orientation_angle, depth = [], [], [], [], [], [], []
-    return boxes, scores, labels, dimensions, orientation_angle, depth
+            boxes, scores, labels, dimensions, orientation, depth = [], [], [], [], [], [], []
+    return boxes, scores, labels, dimensions, orientation, depth
 
 
 def project_to_image(pts_3d, P):
@@ -340,7 +340,7 @@ def save_combined_image(dataset_name, calib_data, boxes, scores, labels, dimensi
     #print("dimensions out of loop", dimensions)
     for box, score, label, dimension, orientation_angle, depth in zip(boxes, scores, labels, dimensions, orientation_angle, depth):
         if score > 0.5:  # Threshold can be adjusted
-            #draw_pred.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
+            #draw_gt.rectangle(box.tolist(), outline="blue")  # Draw 2D bounding box in blue
             #print("dimension in the loop", dimension)
             
             # Draw 3D box

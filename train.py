@@ -37,8 +37,8 @@ default_waymo_calib_folder = '/Users/hyejunlee/waymo_3/training/calib/'
 # Add more Waymo specific paths and parameters if needed
 
 default_learning_rate = 0.0001
-default_load_checkpoint = '/Users/hyejunlee/fcos_3d_new_depth/save_state_waymo_new_depth_6.bin'
-#default_load_checkpoint = None
+#default_load_checkpoint = '/Users/hyejunlee/fcos_3d_new_depth/save_state_waymo_new_depth_6.bin'
+default_load_checkpoint = None
 default_output_image_path = 'output_save_state_3.png'
 
 # Detect device
@@ -138,7 +138,7 @@ def main(mode='train', dataset_name='waymo', image_path=None, load=None):
     # Construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=default_learning_rate, weight_decay=0.0005)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=1)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
 
     model.zero_grad()
 
